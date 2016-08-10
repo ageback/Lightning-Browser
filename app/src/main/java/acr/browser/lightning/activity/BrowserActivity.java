@@ -752,6 +752,9 @@ public abstract class BrowserActivity extends ThemableBrowserActivity implements
                     startActivity(read);
                 }
                 return true;
+            case R.id.action_exit:
+                closeBrowser();
+                return true;
             default:
                 return super.onOptionsItemSelected(item);
         }

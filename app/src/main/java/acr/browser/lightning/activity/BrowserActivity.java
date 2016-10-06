@@ -723,6 +723,11 @@ public abstract class BrowserActivity extends ThemableBrowserActivity implements
                     mDrawerLayout.closeDrawer(mDrawerRight);
                 }
                 return true;
+            case R.id.action_other_browser:
+                Intent urlIntent = new Intent(Intent.ACTION_VIEW);
+                urlIntent.setData(Uri.parse(currentUrl));
+                startActivity(Intent.createChooser(urlIntent,""));
+                return true;
             case R.id.action_back:
                 if (currentView != null && currentView.canGoBack()) {
                     currentView.goBack();

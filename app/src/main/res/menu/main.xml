@@ -24,6 +24,9 @@
         android:id="@+id/action_incognito"
         android:title="@string/action_incognito"/>
     <item
+        android:id="@+id/action_other_browser"
+        android:title="@string/action_other_browser" />
+    <item
         android:id="@+id/action_share"
         android:title="@string/action_share"/>
     <item

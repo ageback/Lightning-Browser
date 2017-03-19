@@ -526,6 +526,7 @@ public abstract class BrowserActivity extends ThemableBrowserActivity implements
                 mSearch.setText(url);
             }
         }
+
     }
 
     private class DrawerLocker implements DrawerListener {

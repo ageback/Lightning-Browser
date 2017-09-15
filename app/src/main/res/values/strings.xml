@@ -280,4 +280,6 @@
     </plurals>
     <string name="notification_incognito_running_message">Touch to open</string>
     <string name="notification_incognito_running_description">Ongoing incognito notification</string>
+    
+    <string name="action_exit">Exit</string>
 </resources>

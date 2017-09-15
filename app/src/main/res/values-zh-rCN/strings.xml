@@ -236,24 +236,26 @@
     <string name="powered_by_duck">由 DuckDuckGo 提供支持</string>
     <string name="settings_black_status_bar">黑色状态栏</string>
     <string name="action_downloads">下载</string>
-    <string name="dialog_delete_all_downloads">删除所有下载</string>
-    <string name="dialog_delete_download">删除下载</string>
+    <string name="dialog_remove_from_history">从历史删除</string>
+    <string name="swap_bookmarks_and_tabs">交换书签和标签抽屉</string>
+    <string name="powered_by_duck">由 DuckDuckGo 提供支持</string>
+    <string name="settings_black_status_bar">黑色状态栏</string>
+    <string name="dialog_download_image">下载图片</string>
     <string name="flash_not_supported">您的系统不支持 Flash 播放器！</string>
     <string name="label_realm">服务器消息: %s</string>
     <string name="powered_by_baidu">由 Baidu 提供支持</string>
-    <string name="unknown_size">未知大小</string>
+    <string name="dialog_copy_link">复制链接</string>
     <string name="bookmark_export_failure">抱歉，无法导出书签！</string>
-    <string name="message_open_download_fail">这个文件已经不存在了</string>
+    <string name="dialog_rename_folder">重命名文件夹</string>
     <string name="upsell_plus_version">升级到 Lightning Plus 以拦截广告</string>
     <string name="action_exit">退出</string>
-    <string name="shortcut_message_failed_to_add">抱歉，您的启动器不支持快捷方式。</string>
     <string name="notification_incognito_running_message">点击打开</string>
-    <string name="message_bookmark_added">书签已添加。</string>
-    <!-- Notifications -->
-    <plurals name="notification_incognito_running_title">
-        <item quantity="one">%1$d 隐身标签打开</item>
+    <string name="dialog_remove_folder">删除文件夹</string>
+    <string name="powered_by_baidu">由 Baidu 提供支持</string>
         <item quantity="other">%1$d 隐身标签打开</item>
     </plurals>
     <string name="notification_incognito_running_description">持续的隐身通知</string>
-    <string name="ssl_warning_dont_ask_again">对于此浏览器会话不再询问。</string>
+    <string name="dialog_title_close_browser">关闭浏览器</string>
+    <string name="upsell_plus_version">升级到 Lightning Plus 以拦截广告</string>
+    <string name="action_exit">退出</string>
 </resources>

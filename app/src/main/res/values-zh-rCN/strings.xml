@@ -246,4 +246,13 @@
     <string name="message_open_download_fail">这个文件已经不存在了</string>
     <string name="upsell_plus_version">升级到 Lightning Plus 以拦截广告</string>
     <string name="action_exit">退出</string>
+    <string name="shortcut_message_failed_to_add">抱歉，您的启动器不支持快捷方式。</string>
+    <string name="notification_incognito_running_message">点击打开</string>
+    <string name="message_bookmark_added">书签已添加。</string>
+    <!-- Notifications -->
+    <plurals name="notification_incognito_running_title">
+        <item quantity="one">%1$d 隐身标签打开</item>
+        <item quantity="other">%1$d 隐身标签打开</item>
+    </plurals>
+    <string name="notification_incognito_running_description">持续的隐身通知</string>
 </resources>

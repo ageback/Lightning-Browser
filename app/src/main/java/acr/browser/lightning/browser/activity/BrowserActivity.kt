@@ -819,6 +819,10 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 }
                 return true
             }
+            R.id.action_exit->{
+                closeBrowser()
+                return true
+            }
             else -> return super.onOptionsItemSelected(item)
         }
     }

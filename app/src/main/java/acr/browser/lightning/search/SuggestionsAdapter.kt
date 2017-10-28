@@ -260,8 +260,7 @@ class SuggestionsAdapter(private val context: Context, dark: Boolean, incognito:
             private val networkScheduler: Scheduler
     ) : Filter() {
 
-        private var networkDisposable: Disposable? = null
-        private var historyDisposable: Disposable? = null
+        private var disposable: Disposable? = null
 
         override fun performFiltering(constraint: CharSequence?): Filter.FilterResults {
             val results = Filter.FilterResults()
@@ -271,8 +270,8 @@ class SuggestionsAdapter(private val context: Context, dark: Boolean, incognito:
             }
             val query = constraint.toString().toLowerCase(Locale.getDefault()).trim()
 
-            if (networkDisposable?.isDisposed != false) {
-                networkDisposable = suggestionsRepository.resultsForSearch(query)
+            if (disposable?.isDisposed != false) {
+                disposable = suggestionsRepository.resultsForSearch(query)
                         .subscribeOn(networkScheduler)
                         .observeOn(AndroidSchedulers.mainThread())
                         .subscribe { item ->
@@ -288,15 +287,12 @@ class SuggestionsAdapter(private val context: Context, dark: Boolean, incognito:
                                 suggestionsAdapter.combineResults(item, null, null)
                     })
 
-            if (historyDisposable?.isDisposed != false) {
-                historyDisposable = historyModel.findHistoryItemsContaining(query)
-                        .subscribeOn(databaseScheduler)
-                        .observeOn(AndroidSchedulers.mainThread())
-                        .subscribe { list ->
-                            suggestionsAdapter.combineResults(null, list, null)
-                        }
-            }
-
+            historyModel.findHistoryItemsContaining(query)
+                    .subscribeOn(databaseScheduler)
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe { list ->
+                        suggestionsAdapter.combineResults(null, list, null)
+                    }
             results.count = 1
             return results
         }

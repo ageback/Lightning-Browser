@@ -36,7 +36,6 @@ import acr.browser.lightning.view.Handlers
 import acr.browser.lightning.view.LightningView
 import acr.browser.lightning.view.SearchView
 import android.app.Activity
-import android.app.SearchManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -66,9 +65,7 @@ import android.support.v7.graphics.Palette
 import android.text.Editable
 import android.text.TextWatcher
 import android.text.style.CharacterStyle
-import android.text.style.MetricAffectingSpan
 import android.text.style.ParagraphStyle
-import android.text.style.StyleSpan
 import android.util.Log
 import android.view.*
 import android.view.View.*
@@ -361,11 +358,18 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             setOnKeyListener(searchListener)
             onFocusChangeListener = searchListener
             setOnEditorActionListener(searchListener)
-            setOnTouchListener(searchListener)
             onPreFocusListener = searchListener
             addTextChangedListener(searchListener)
 
             initializeSearchSuggestions(this)
+        }
+
+        searchView?.onRightDrawableClickListener = {
+            if (it.hasFocus()) {
+                it.setText("")
+            } else {
+                refreshOrStop()
+            }
         }
 
         searchBackground = customView.findViewById<View>(R.id.search_container).apply {
@@ -438,7 +442,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     private inner class SearchListenerClass : OnKeyListener,
             OnEditorActionListener,
             OnFocusChangeListener,
-            OnTouchListener,
             SearchView.PreFocusListener,
             TextWatcher {
         override fun beforeTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) = Unit
@@ -509,27 +512,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                     imm.hideSoftInputFromWindow(it.windowToken, 0)
                 }
             }
-        }
-
-        override fun onTouch(v: View, event: MotionEvent): Boolean {
-            searchView?.let {
-                if (it.compoundDrawables[2] != null) {
-                    val iconWidth = iconDrawable?.intrinsicWidth ?: 0
-                    val tappedX = event.x > (it.width - it.paddingRight - iconWidth)
-                    if (tappedX) {
-                        if (event.action == MotionEvent.ACTION_UP) {
-                            if (it.hasFocus()) {
-                                it.setText("")
-                            } else {
-                                refreshOrStop()
-                            }
-                        }
-                        return true
-                    }
-                }
-            }
-
-            return false
         }
 
         override fun onPreFocus() {
@@ -2028,7 +2010,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     /**
      * If the [drawer] is open, close it and return true. Return false otherwise.
      */
-    fun DrawerLayout.closeDrawerIfOpen(drawer: View): Boolean =
+    private fun DrawerLayout.closeDrawerIfOpen(drawer: View): Boolean =
             if (isDrawerOpen(drawer)) {
                 closeDrawer(drawer)
                 true

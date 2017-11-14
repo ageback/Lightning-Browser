@@ -822,6 +822,15 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 }
                 return true
             }
+            R.id.action_other_browser -> {
+                val intent = Intent()
+                intent.action = "android.intent.action.VIEW"
+                val contentUrl = Uri.parse(currentView?.webView?.url)
+                intent.data=(contentUrl)
+                startActivity(intent)
+
+                return true
+            }
             R.id.action_exit->{
                 closeBrowser()
                 return true

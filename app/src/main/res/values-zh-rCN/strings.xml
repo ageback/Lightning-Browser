@@ -256,4 +256,7 @@
     </plurals>
     <string name="notification_incognito_running_description">持续的隐身通知</string>
     <string name="ssl_warning_dont_ask_again">对于此浏览器会话不再询问。</string>
+    <string name="title_permission_request">权限请求</string>
+    <string name="message_permission_request">%1$s\n\n想要使用：\n\n%2$s</string>
+    <string name="webrtc_support">WebRTC 支持</string>
 </resources>

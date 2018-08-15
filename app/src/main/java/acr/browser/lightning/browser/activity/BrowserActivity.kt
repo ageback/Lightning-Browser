@@ -7,7 +7,6 @@ package acr.browser.lightning.browser.activity
 import acr.browser.lightning.BrowserApp
 import acr.browser.lightning.IncognitoActivity
 import acr.browser.lightning.R
-import acr.browser.lightning.R.id.toolbar_layout
 import acr.browser.lightning.browser.*
 import acr.browser.lightning.browser.fragment.BookmarksFragment
 import acr.browser.lightning.browser.fragment.TabsFragment
@@ -227,15 +226,19 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         val actionBar = requireNotNull(supportActionBar)
 
         //TODO make sure dark theme flag gets set correctly
-        isDarkTheme = preferences.useTheme != 0 || isIncognito()
-        iconColor = if (isDarkTheme) ThemeUtils.getIconDarkThemeColor(this) else ThemeUtils.getIconLightThemeColor(this)
+        isDarkTheme = userPreferences.useTheme != 0 || isIncognito()
+        iconColor = if (isDarkTheme) {
+            ThemeUtils.getIconDarkThemeColor(this)
+        } else {
+            ThemeUtils.getIconLightThemeColor(this)
+        }
         disabledIconColor = if (isDarkTheme) {
             ContextCompat.getColor(this, R.color.icon_dark_theme_disabled)
         } else {
             ContextCompat.getColor(this, R.color.icon_light_theme_disabled)
         }
-        shouldShowTabsInDrawer = preferences.getShowTabsInDrawer(!isTablet)
-        swapBookmarksAndTabs = preferences.bookmarksAndTabsSwapped
+        shouldShowTabsInDrawer = userPreferences.showTabsInDrawer
+        swapBookmarksAndTabs = userPreferences.bookmarksAndTabsSwapped
 
         // initialize background ColorDrawable
         val primaryColor = ThemeUtils.getPrimaryColor(this)
@@ -307,10 +310,10 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         actionBar.setCustomView(R.layout.toolbar_content)
 
         val customView = actionBar.customView
-        val lp = customView.layoutParams
-        lp.width = LayoutParams.MATCH_PARENT
-        lp.height = LayoutParams.MATCH_PARENT
-        customView.layoutParams = lp
+        customView.layoutParams = customView.layoutParams.apply {
+            width = LayoutParams.MATCH_PARENT
+            height = LayoutParams.MATCH_PARENT
+        }
 
         arrowImageView = customView.findViewById<ImageView>(R.id.arrow).also {
             if (shouldShowTabsInDrawer) {
@@ -385,7 +388,11 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             WebIconDatabase.getInstance().open(getDir("icons", Context.MODE_PRIVATE).path)
         }
 
-        var intent: Intent? = if (savedInstanceState == null) intent else null
+        var intent: Intent? = if (savedInstanceState == null) {
+            intent
+        } else {
+            null
+        }
 
         val launchedFromHistory = intent != null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
 
@@ -409,7 +416,11 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     private fun getTabsFragmentViewId(): Int = if (shouldShowTabsInDrawer) {
-        if (swapBookmarksAndTabs) R.id.right_drawer else R.id.left_drawer
+        if (swapBookmarksAndTabs) {
+            R.id.right_drawer
+        } else {
+            R.id.left_drawer
+        }
     } else {
         R.id.tabs_toolbar_container
     }
@@ -564,24 +575,20 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             Utils.dpToPx(300f)
         }
         if (width > maxWidth) {
-            val params = left_drawer
-                    .layoutParams as android.support.v4.widget.DrawerLayout.LayoutParams
+            val params = left_drawer.layoutParams as DrawerLayout.LayoutParams
             params.width = maxWidth
             left_drawer.layoutParams = params
             left_drawer.requestLayout()
-            val paramsRight = right_drawer
-                    .layoutParams as android.support.v4.widget.DrawerLayout.LayoutParams
+            val paramsRight = right_drawer.layoutParams as DrawerLayout.LayoutParams
             paramsRight.width = maxWidth
             right_drawer.layoutParams = paramsRight
             right_drawer.requestLayout()
         } else {
-            val params = left_drawer
-                    .layoutParams as android.support.v4.widget.DrawerLayout.LayoutParams
+            val params = left_drawer.layoutParams as DrawerLayout.LayoutParams
             params.width = width
             left_drawer.layoutParams = params
             left_drawer.requestLayout()
-            val paramsRight = right_drawer
-                    .layoutParams as android.support.v4.widget.DrawerLayout.LayoutParams
+            val paramsRight = right_drawer.layoutParams as DrawerLayout.LayoutParams
             paramsRight.width = width
             right_drawer.layoutParams = paramsRight
             right_drawer.requestLayout()
@@ -590,8 +597,8 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
     private fun initializePreferences() {
         val currentView = tabsManager.currentTab
-        isFullScreen = preferences.fullScreenEnabled
-        val colorMode = preferences.colorModeEnabled && !isDarkTheme
+        isFullScreen = userPreferences.fullScreenEnabled
+        val colorMode = userPreferences.colorModeEnabled && !isDarkTheme
 
         webPageBitmap?.let { webBitmap ->
             if (!isIncognito() && !colorMode && !isDarkTheme) {
@@ -604,15 +611,15 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         }
 
         val manager = supportFragmentManager
-        val tabsFragment = manager.findFragmentByTag(TAG_TABS_FRAGMENT)
-        (tabsFragment as? TabsFragment)?.reinitializePreferences()
-        val bookmarksFragment = manager.findFragmentByTag(TAG_BOOKMARK_FRAGMENT)
-        (bookmarksFragment as? BookmarksFragment)?.reinitializePreferences()
+        val tabsFragment = manager.findFragmentByTag(TAG_TABS_FRAGMENT) as? TabsFragment
+        tabsFragment?.reinitializePreferences()
+        val bookmarksFragment = manager.findFragmentByTag(TAG_BOOKMARK_FRAGMENT)as? BookmarksFragment
+        bookmarksFragment?.reinitializePreferences()
 
         // TODO layout transition causing memory leak
         //        content_frame.setLayoutTransition(new LayoutTransition());
 
-        setFullscreen(preferences.hideStatusBarEnabled, false)
+        setFullscreen(userPreferences.hideStatusBarEnabled, false)
 
         val currentSearchEngine = searchEngineProvider.getCurrentSearchEngine()
         searchText = currentSearchEngine.queryUrl
@@ -897,10 +904,12 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
      * method that shows a dialog asking what string the user wishes to search
      * for. It highlights the text entered.
      */
-    private fun findInPage() = BrowserDialog.showEditText(this,
+    private fun findInPage() = BrowserDialog.showEditText(
+            this,
             R.string.action_find,
             R.string.search_hint,
-            R.string.search_hint) { text ->
+            R.string.search_hint
+    ) { text ->
         if (text.isNotEmpty()) {
             presenter?.findInPage(text)
             showFindInPageControls(text)
@@ -933,7 +942,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     override fun notifyTabViewRemoved(position: Int) {
-        Log.d(TAG, "Notify Tab Removed: " + position)
+        Log.d(TAG, "Notify Tab Removed: $position")
         tabsView?.tabRemoved(position)
     }
 
@@ -943,7 +952,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     override fun notifyTabViewChanged(position: Int) {
-        Log.d(TAG, "Notify Tab Changed: " + position)
+        Log.d(TAG, "Notify Tab Changed: $position")
         tabsView?.tabChanged(position)
     }
 
@@ -1055,12 +1064,15 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     override fun newTabButtonLongClicked() {
-        preferences.savedUrl?.let {
-            newTab(it, true)
+        val savedUrl = userPreferences.savedUrl
+
+        if (savedUrl != "") {
+            newTab(savedUrl, true)
 
             Utils.showSnackbar(this, R.string.deleted_tab)
         }
-        preferences.savedUrl = null
+
+        userPreferences.savedUrl = ""
     }
 
     override fun bookmarkButtonClicked() {
@@ -1120,25 +1132,24 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
     protected fun performExitCleanUp() {
         val currentTab = tabsManager.currentTab
-        if (preferences.clearCacheExit && currentTab != null && !isIncognito()) {
+        if (userPreferences.clearCacheExit && currentTab != null && !isIncognito()) {
             WebUtils.clearCache(currentTab.webView)
             Log.d(TAG, "Cache Cleared")
         }
-        if (preferences.clearHistoryExitEnabled && !isIncognito()) {
+        if (userPreferences.clearHistoryExitEnabled && !isIncognito()) {
             WebUtils.clearHistory(this, historyModel, databaseScheduler)
             Log.d(TAG, "History Cleared")
         }
-        if (preferences.clearCookiesExitEnabled && !isIncognito()) {
+        if (userPreferences.clearCookiesExitEnabled && !isIncognito()) {
             WebUtils.clearCookies(this)
             Log.d(TAG, "Cookies Cleared")
         }
-        if (preferences.clearWebStorageExitEnabled && !isIncognito()) {
+        if (userPreferences.clearWebStorageExitEnabled && !isIncognito()) {
             WebUtils.clearWebStorage()
             Log.d(TAG, "WebStorage Cleared")
         } else if (isIncognito()) {
             WebUtils.clearWebStorage()     // We want to make sure incognito mode is secure
         }
-        suggestionsAdapter?.clearCache()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -1229,7 +1240,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     protected fun saveOpenTabs() {
-        if (preferences.restoreLostTabsEnabled) {
+        if (userPreferences.restoreLostTabsEnabled) {
             tabsManager.saveState()
         }
     }
@@ -1262,7 +1273,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     override fun onResume() {
         super.onResume()
         Log.d(TAG, "onResume")
-        if (swapBookmarksAndTabs != preferences.bookmarksAndTabsSwapped) {
+        if (swapBookmarksAndTabs != userPreferences.bookmarksAndTabsSwapped) {
             restart()
         }
 
@@ -1277,7 +1288,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 .connectivity()
                 .subscribeOn(AndroidSchedulers.mainThread())
                 .subscribe { connected ->
-                    Log.d(TAG, "Network connected: " + connected)
+                    Log.d(TAG, "Network connected: $connected")
                     tabsManager.notifyConnectionStatus(connected)
                 }
 
@@ -1453,17 +1464,17 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 .subscribeOn(databaseScheduler)
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe { item ->
-                    tabsManager.let {
-                        it.allTabs.map(LightningView::url)
-                                .withIndex()
-                                .find { UrlUtils.isHistoryUrl(it.value) }
-                                ?.let {
-                                    presenter?.tabChanged(it.index)
-                                    return@subscribe
-                                }
+                    tabsManager
+                            .allTabs
+                            .map(LightningView::url)
+                            .withIndex()
+                            .find { UrlUtils.isHistoryUrl(it.value) }
+                            ?.let {
+                                presenter?.tabChanged(it.index)
+                                return@subscribe
+                            }
 
-                        newTab(requireNotNull(item), true)
-                    }
+                    newTab(requireNotNull(item), true)
                 }
     }
 
@@ -1710,7 +1721,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             Log.e(TAG, "WebView is not allowed to keep the screen on")
         }
 
-        setFullscreen(preferences.hideStatusBarEnabled, false)
+        setFullscreen(userPreferences.hideStatusBarEnabled, false)
         if (fullscreenContainerView != null) {
             val parent = fullscreenContainerView?.parent as ViewGroup
             parent.removeView(fullscreenContainerView)

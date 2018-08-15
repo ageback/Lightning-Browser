@@ -5,7 +5,7 @@ import acr.browser.lightning.R
 import acr.browser.lightning.database.history.HistoryRepository
 import acr.browser.lightning.dialog.BrowserDialog
 import acr.browser.lightning.dialog.DialogItem
-import acr.browser.lightning.preference.PreferenceManager
+import acr.browser.lightning.preference.UserPreferences
 import acr.browser.lightning.utils.ApiUtils
 import acr.browser.lightning.utils.Utils
 import acr.browser.lightning.utils.WebUtils
@@ -20,26 +20,11 @@ import javax.inject.Named
 
 class PrivacySettingsFragment : AbstractSettingsFragment() {
 
-    private val SETTINGS_LOCATION = "location"
-    private val SETTINGS_THIRDPCOOKIES = "third_party"
-    private val SETTINGS_SAVEPASSWORD = "password"
-    private val SETTINGS_CACHEEXIT = "clear_cache_exit"
-    private val SETTINGS_HISTORYEXIT = "clear_history_exit"
-    private val SETTINGS_COOKIEEXIT = "clear_cookies_exit"
-    private val SETTINGS_CLEARCACHE = "clear_cache"
-    private val SETTINGS_CLEARHISTORY = "clear_history"
-    private val SETTINGS_CLEARCOOKIES = "clear_cookies"
-    private val SETTINGS_CLEARWEBSTORAGE = "clear_webstorage"
-    private val SETTINGS_WEBSTORAGEEXIT = "clear_webstorage_exit"
-    private val SETTINGS_DONOTTRACK = "do_not_track"
-    private val SETTINGS_WEBRTC = "webrtc_support"
-    private val SETTINGS_IDENTIFYINGHEADERS = "remove_identifying_headers"
-
     @Inject internal lateinit var historyRepository: HistoryRepository
-    @Inject internal lateinit var preferenceManager: PreferenceManager
+    @Inject internal lateinit var userPreferences: UserPreferences
     @Inject @field:Named("database") internal lateinit var databaseScheduler: Scheduler
 
-    override fun providePreferencesResource() = R.xml.preference_privacy
+    override fun providePreferencesXmlResource() = R.xml.preference_privacy
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,67 +37,67 @@ class PrivacySettingsFragment : AbstractSettingsFragment() {
 
         checkBoxPreference(
                 preference = SETTINGS_LOCATION,
-                isChecked = preferenceManager.locationEnabled,
-                onCheckChange = preferenceManager::setLocationEnabled
+                isChecked = userPreferences.locationEnabled,
+                onCheckChange = { userPreferences.locationEnabled = it }
         )
 
         checkBoxPreference(
                 preference = SETTINGS_THIRDPCOOKIES,
-                isChecked = preferenceManager.blockThirdPartyCookiesEnabled,
+                isChecked = userPreferences.blockThirdPartyCookiesEnabled,
                 isEnabled = ApiUtils.doesSupportThirdPartyCookieBlocking(),
-                onCheckChange = preferenceManager::setBlockThirdPartyCookiesEnabled
+                onCheckChange = { userPreferences.blockThirdPartyCookiesEnabled = it }
         )
 
         checkBoxPreference(
                 preference = SETTINGS_SAVEPASSWORD,
-                isChecked = preferenceManager.savePasswordsEnabled,
-                onCheckChange = preferenceManager::setSavePasswordsEnabled
+                isChecked = userPreferences.savePasswordsEnabled,
+                onCheckChange = { userPreferences.savePasswordsEnabled = it }
         )
 
         checkBoxPreference(
                 preference = SETTINGS_CACHEEXIT,
-                isChecked = preferenceManager.clearCacheExit,
-                onCheckChange = preferenceManager::setClearCacheExit
+                isChecked = userPreferences.clearCacheExit,
+                onCheckChange = { userPreferences.clearCacheExit = it }
         )
 
         checkBoxPreference(
                 preference = SETTINGS_HISTORYEXIT,
-                isChecked = preferenceManager.clearHistoryExitEnabled,
-                onCheckChange = preferenceManager::setClearHistoryExitEnabled
+                isChecked = userPreferences.clearHistoryExitEnabled,
+                onCheckChange = { userPreferences.clearHistoryExitEnabled = it }
         )
 
         checkBoxPreference(
                 preference = SETTINGS_COOKIEEXIT,
-                isChecked = preferenceManager.clearCookiesExitEnabled,
-                onCheckChange = preferenceManager::setClearCookiesExitEnabled
+                isChecked = userPreferences.clearCookiesExitEnabled,
+                onCheckChange = { userPreferences.clearCookiesExitEnabled = it }
         )
 
         checkBoxPreference(
                 preference = SETTINGS_WEBSTORAGEEXIT,
-                isChecked = preferenceManager.clearWebStorageExitEnabled,
-                onCheckChange = preferenceManager::setClearWebStorageExitEnabled
+                isChecked = userPreferences.clearWebStorageExitEnabled,
+                onCheckChange = { userPreferences.clearWebStorageExitEnabled = it }
         )
 
         checkBoxPreference(
                 preference = SETTINGS_DONOTTRACK,
-                isChecked = preferenceManager.doNotTrackEnabled && ApiUtils.doesSupportWebViewHeaders(),
+                isChecked = userPreferences.doNotTrackEnabled && ApiUtils.doesSupportWebViewHeaders(),
                 isEnabled = ApiUtils.doesSupportWebViewHeaders(),
-                onCheckChange = preferenceManager::setDoNotTrackEnabled
+                onCheckChange = { userPreferences.doNotTrackEnabled = it }
         )
 
         checkBoxPreference(
                 preference = SETTINGS_WEBRTC,
-                isChecked = preferenceManager.webRtcEnabled && ApiUtils.doesSupportWebRtc(),
+                isChecked = userPreferences.webRtcEnabled && ApiUtils.doesSupportWebRtc(),
                 isEnabled = ApiUtils.doesSupportWebRtc(),
-                onCheckChange = preferenceManager::setWebRtcEnabled
+                onCheckChange = { userPreferences.webRtcEnabled = it }
         )
 
         checkBoxPreference(
                 preference = SETTINGS_IDENTIFYINGHEADERS,
-                isChecked = preferenceManager.removeIdentifyingHeadersEnabled && ApiUtils.doesSupportWebViewHeaders(),
+                isChecked = userPreferences.removeIdentifyingHeadersEnabled && ApiUtils.doesSupportWebViewHeaders(),
                 isEnabled = ApiUtils.doesSupportWebViewHeaders(),
                 summary = "${LightningView.HEADER_REQUESTED_WITH}, ${LightningView.HEADER_WAP_PROFILE}",
-                onCheckChange = preferenceManager::setRemoveIdentifyingHeadersEnabled
+                onCheckChange = { userPreferences.removeIdentifyingHeadersEnabled = it }
         )
 
     }
@@ -183,6 +168,23 @@ class PrivacySettingsFragment : AbstractSettingsFragment() {
     private fun clearWebStorage() {
         WebUtils.clearWebStorage()
         Utils.showSnackbar(activity, R.string.message_web_storage_cleared)
+    }
+
+    companion object {
+        private const val SETTINGS_LOCATION = "location"
+        private const val SETTINGS_THIRDPCOOKIES = "third_party"
+        private const val SETTINGS_SAVEPASSWORD = "password"
+        private const val SETTINGS_CACHEEXIT = "clear_cache_exit"
+        private const val SETTINGS_HISTORYEXIT = "clear_history_exit"
+        private const val SETTINGS_COOKIEEXIT = "clear_cookies_exit"
+        private const val SETTINGS_CLEARCACHE = "clear_cache"
+        private const val SETTINGS_CLEARHISTORY = "clear_history"
+        private const val SETTINGS_CLEARCOOKIES = "clear_cookies"
+        private const val SETTINGS_CLEARWEBSTORAGE = "clear_webstorage"
+        private const val SETTINGS_WEBSTORAGEEXIT = "clear_webstorage_exit"
+        private const val SETTINGS_DONOTTRACK = "do_not_track"
+        private const val SETTINGS_WEBRTC = "webrtc_support"
+        private const val SETTINGS_IDENTIFYINGHEADERS = "remove_identifying_headers"
     }
 
 }

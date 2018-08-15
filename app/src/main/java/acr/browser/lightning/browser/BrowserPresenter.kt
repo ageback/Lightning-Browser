@@ -10,7 +10,7 @@ import acr.browser.lightning.constant.SCHEME_HOMEPAGE
 import acr.browser.lightning.controller.UIController
 import acr.browser.lightning.html.bookmark.BookmarkPage
 import acr.browser.lightning.html.homepage.StartPage
-import acr.browser.lightning.preference.PreferenceManager
+import acr.browser.lightning.preference.UserPreferences
 import acr.browser.lightning.ssl.SSLState
 import acr.browser.lightning.utils.UrlUtils
 import acr.browser.lightning.view.LightningView
@@ -19,8 +19,6 @@ import android.app.Application
 import android.content.Intent
 import android.util.Log
 import android.webkit.URLUtil
-import com.anthonycr.bonsai.CompletableOnSubscribe
-import com.anthonycr.bonsai.Schedulers
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.Disposable
 import javax.inject.Inject
@@ -32,7 +30,7 @@ import javax.inject.Inject
 class BrowserPresenter(private val view: BrowserView, private val isIncognito: Boolean) {
 
     @Inject internal lateinit var application: Application
-    @Inject internal lateinit var preferences: PreferenceManager
+    @Inject internal lateinit var userPreferences: UserPreferences
     private val tabsModel: TabsManager
     private var currentTab: LightningView? = null
     private var shouldClose: Boolean = false
@@ -51,15 +49,13 @@ class BrowserPresenter(private val view: BrowserView, private val isIncognito: B
      */
     fun setupTabs(intent: Intent?) {
         tabsModel.initializeTabs(view as Activity, intent, isIncognito)
-                .subscribeOn(Schedulers.main())
-                .subscribe(object : CompletableOnSubscribe() {
-                    override fun onComplete() {
-                        // At this point we always have at least a tab in the tab manager
-                        view.notifyTabViewInitialized()
-                        view.updateTabNumber(tabsModel.size())
-                        tabChanged(tabsModel.last())
-                    }
-                })
+                .subscribeOn(AndroidSchedulers.mainThread())
+                .subscribe {
+                    // At this point we always have at least a tab in the tab manager
+                    view.notifyTabViewInitialized()
+                    view.updateTabNumber(tabsModel.size())
+                    tabChanged(tabsModel.last())
+                }
     }
 
     /**
@@ -74,7 +70,7 @@ class BrowserPresenter(private val view: BrowserView, private val isIncognito: B
 
     private fun onTabChanged(newTab: LightningView?) {
         Log.d(TAG, "On tab changed")
-        view.updateSslState(newTab?.currentSslState() ?: SSLState.None())
+        view.updateSslState(newTab?.currentSslState() ?: SSLState.None)
 
         sslStateSubscription?.dispose()
         sslStateSubscription = newTab
@@ -140,7 +136,7 @@ class BrowserPresenter(private val view: BrowserView, private val isIncognito: B
     }
 
     private fun mapHomepageToCurrentUrl(): String {
-        val homepage = preferences.homepage
+        val homepage = userPreferences.homepage
 
         return when (homepage) {
             SCHEME_HOMEPAGE -> "$FILE${StartPage.getStartPageFile(application)}"
@@ -159,7 +155,7 @@ class BrowserPresenter(private val view: BrowserView, private val isIncognito: B
         val tabToDelete = tabsModel.getTabAtPosition(position) ?: return
 
         if (!UrlUtils.isSpecialUrl(tabToDelete.url) && !isIncognito) {
-            preferences.savedUrl = tabToDelete.url
+            userPreferences.savedUrl = tabToDelete.url
         }
 
         val isShown = tabToDelete.isShown

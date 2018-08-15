@@ -31,7 +31,7 @@ import dagger.Component
 import javax.inject.Singleton
 
 @Singleton
-@Component(modules = arrayOf(AppModule::class, LightningModule::class))
+@Component(modules = [(AppModule::class), (LightningModule::class)])
 interface AppComponent {
 
     fun inject(activity: BrowserActivity)
@@ -48,7 +48,7 @@ interface AppComponent {
 
     fun inject(activity: ThemableBrowserActivity)
 
-    fun inject(fragment: LightningPreferenceFragment)
+    fun inject(advancedSettingsFragment: AdvancedSettingsFragment)
 
     fun inject(app: BrowserApp)
 

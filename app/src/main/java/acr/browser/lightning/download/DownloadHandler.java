@@ -39,11 +39,13 @@ import acr.browser.lightning.controller.UIController;
 import acr.browser.lightning.database.downloads.DownloadItem;
 import acr.browser.lightning.database.downloads.DownloadsRepository;
 import acr.browser.lightning.dialog.BrowserDialog;
-import acr.browser.lightning.preference.PreferenceManager;
+import acr.browser.lightning.preference.UserPreferences;
 import acr.browser.lightning.utils.FileUtils;
 import acr.browser.lightning.utils.Utils;
 import acr.browser.lightning.view.LightningView;
 import io.reactivex.Scheduler;
+import io.reactivex.android.schedulers.AndroidSchedulers;
+import io.reactivex.disposables.Disposable;
 import io.reactivex.functions.Consumer;
 
 /**
@@ -58,6 +60,7 @@ public class DownloadHandler {
 
     @Inject DownloadsRepository downloadsRepository;
     @Inject @Named("database") Scheduler databaseScheduler;
+    @Inject @Named("network") Scheduler networkScheduler;
 
     @Inject
     public DownloadHandler() {
@@ -75,7 +78,7 @@ public class DownloadHandler {
      * @param mimetype           The mimetype of the content reported by the server
      * @param contentSize        The size of the content
      */
-    public void onDownloadStart(@NonNull Activity context, @NonNull PreferenceManager manager, @NonNull String url, String userAgent,
+    public void onDownloadStart(@NonNull Activity context, @NonNull UserPreferences manager, @NonNull String url, String userAgent,
                                 @Nullable String contentDisposition, String mimetype, @NonNull String contentSize) {
 
         Log.d(TAG, "DOWNLOAD: Trying to download from URL: " + url);
@@ -162,7 +165,7 @@ public class DownloadHandler {
      * @param contentSize        The size of the content
      */
     /* package */
-    private void onDownloadStartNoStream(@NonNull final Activity context, @NonNull PreferenceManager preferences,
+    private void onDownloadStartNoStream(@NonNull final Activity context, @NonNull UserPreferences preferences,
                                          @NonNull String url, String userAgent,
                                          String contentDisposition, @Nullable String mimetype, @NonNull String contentSize) {
         final String filename = URLUtil.guessFileName(url, contentDisposition, mimetype);
@@ -247,7 +250,26 @@ public class DownloadHandler {
             }
             // We must have long pressed on a link or image to download it. We
             // are not sure of the mimetype in this case, so do a head request
-            new FetchUrlMimeType(context, request, addressString, cookies, userAgent).start();
+            final Disposable disposable = new FetchUrlMimeType(context, request, addressString, cookies, userAgent)
+                .create()
+                .subscribeOn(networkScheduler)
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(new Consumer<FetchUrlMimeType.Result>() {
+                    @Override
+                    public void accept(FetchUrlMimeType.Result result) {
+                        switch (result) {
+                            case FAILURE_ENQUEUE:
+                                Utils.showSnackbar(context, R.string.cannot_download);
+                                break;
+                            case FAILURE_LOCATION:
+                                Utils.showSnackbar(context, R.string.problem_location_download);
+                                break;
+                            case SUCCESS:
+                                Utils.showSnackbar(context, R.string.download_pending);
+                                break;
+                        }
+                    }
+                });
         } else {
             Log.d(TAG, "Valid mimetype, attempting to download");
             final DownloadManager manager = (DownloadManager) context

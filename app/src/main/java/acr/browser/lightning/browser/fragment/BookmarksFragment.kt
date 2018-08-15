@@ -12,7 +12,7 @@ import acr.browser.lightning.database.HistoryItem
 import acr.browser.lightning.database.bookmark.BookmarkRepository
 import acr.browser.lightning.dialog.LightningDialogBuilder
 import acr.browser.lightning.favicon.FaviconModel
-import acr.browser.lightning.preference.PreferenceManager
+import acr.browser.lightning.preference.UserPreferences
 import acr.browser.lightning.reading.activity.ReadingActivity
 import acr.browser.lightning.utils.ThemeUtils
 import android.app.Activity
@@ -31,9 +31,6 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
-import com.anthonycr.bonsai.Schedulers
-import com.anthonycr.bonsai.SingleOnSubscribe
-import com.anthonycr.bonsai.Subscription
 import io.reactivex.Scheduler
 import io.reactivex.Single
 import io.reactivex.android.schedulers.AndroidSchedulers
@@ -52,11 +49,12 @@ class BookmarksFragment : Fragment(), View.OnClickListener, View.OnLongClickList
     // Dialog builder
     @Inject internal lateinit var bookmarksDialogBuilder: LightningDialogBuilder
 
-    @Inject internal lateinit var preferenceManager: PreferenceManager
+    @Inject internal lateinit var userPreferences: UserPreferences
 
     @Inject internal lateinit var faviconModel: FaviconModel
 
     @Inject @field:Named("database") internal lateinit var databaseScheduler: Scheduler
+    @Inject @field:Named("network") internal lateinit var networkScheduler: Scheduler
 
     private lateinit var uiController: UIController
 
@@ -86,7 +84,7 @@ class BookmarksFragment : Fragment(), View.OnClickListener, View.OnLongClickList
 
         uiController = context as UIController
         isIncognito = arguments?.getBoolean(INCOGNITO_MODE, false) == true
-        val darkTheme = preferenceManager.useTheme != 0 || isIncognito
+        val darkTheme = userPreferences.useTheme != 0 || isIncognito
         webPageBitmap = ThemeUtils.getThemedBitmap(context, R.drawable.ic_webpage, darkTheme)
         folderBitmap = ThemeUtils.getThemedBitmap(context, R.drawable.ic_folder, darkTheme)
         iconColor = if (darkTheme) {
@@ -139,7 +137,7 @@ class BookmarksFragment : Fragment(), View.OnClickListener, View.OnLongClickList
         setupNavigationButton(view, R.id.action_toggle_desktop, R.id.action_toggle_desktop_image)
 
 
-        bookmarkAdapter = BookmarkListAdapter(faviconModel, folderBitmap!!, webPageBitmap!!).apply {
+        bookmarkAdapter = BookmarkListAdapter(faviconModel, folderBitmap!!, webPageBitmap!!, networkScheduler).apply {
             onItemClickListener = itemClickListener
             onItemLongCLickListener = itemLongClickListener
         }
@@ -175,7 +173,7 @@ class BookmarksFragment : Fragment(), View.OnClickListener, View.OnLongClickList
 
     fun reinitializePreferences() {
         val activity = activity ?: return
-        val darkTheme = preferenceManager.useTheme != 0 || isIncognito
+        val darkTheme = userPreferences.useTheme != 0 || isIncognito
         webPageBitmap = ThemeUtils.getThemedBitmap(activity, R.drawable.ic_webpage, darkTheme)
         folderBitmap = ThemeUtils.getThemedBitmap(activity, R.drawable.ic_folder, darkTheme)
         iconColor = if (darkTheme)
@@ -222,13 +220,13 @@ class BookmarksFragment : Fragment(), View.OnClickListener, View.OnLongClickList
                     } else {
                         Single.just(listOf())
                     }
-                }).toList()
-                .map { it.flatMap { it }.toMutableList() }
+                })
+                .toList()
+                .map { it.flatten().sorted() }
                 .subscribeOn(databaseScheduler)
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe { bookmarksAndFolders ->
                     uiModel.currentFolder = folder
-                    bookmarksAndFolders.sort()
                     setBookmarkDataSet(bookmarksAndFolders, animate)
                 }
     }
@@ -350,11 +348,12 @@ class BookmarksFragment : Fragment(), View.OnClickListener, View.OnLongClickList
     private class BookmarkListAdapter(
             private val faviconModel: FaviconModel,
             private val folderBitmap: Bitmap,
-            private val webpageBitmap: Bitmap
+            private val webpageBitmap: Bitmap,
+            private val networkScheduler: Scheduler
     ) : RecyclerView.Adapter<BookmarkViewHolder>() {
 
         private var bookmarks: List<HistoryItem> = ArrayList()
-        private val faviconFetchSubscriptions = ConcurrentHashMap<String, Subscription>()
+        private val faviconFetchSubscriptions = ConcurrentHashMap<String, Disposable>()
 
         var onItemLongCLickListener: OnItemLongClickListener? = null
         var onItemClickListener: OnItemClickListener? = null
@@ -388,12 +387,12 @@ class BookmarksFragment : Fragment(), View.OnClickListener, View.OnLongClickList
 
         internal fun cleanupSubscriptions() {
             for (subscription in faviconFetchSubscriptions.values) {
-                subscription.unsubscribe()
+                subscription.dispose()
             }
             faviconFetchSubscriptions.clear()
         }
 
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): BookmarkViewHolder? {
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): BookmarkViewHolder {
             val inflater = LayoutInflater.from(parent.context)
             val itemView = inflater.inflate(R.layout.bookmark_list_item, parent, false)
 
@@ -413,25 +412,23 @@ class BookmarksFragment : Fragment(), View.OnClickListener, View.OnLongClickList
 
                     val url = web.url
 
-                    faviconFetchSubscriptions[url]?.unsubscribe()
+                    faviconFetchSubscriptions[url]?.dispose()
                     faviconFetchSubscriptions.remove(url)
 
                     val faviconSubscription = faviconModel.faviconForUrl(url, web.title)
-                            .subscribeOn(Schedulers.io())
-                            .observeOn(Schedulers.main())
-                            .subscribe(object : SingleOnSubscribe<Bitmap>() {
-                                override fun onItem(item: Bitmap?) {
-                                    faviconFetchSubscriptions.remove(url)
-                                    val tag = holder.favicon.tag
-                                    if (tag != null && tag == url.hashCode()) {
-                                        holder.favicon.setImageBitmap(item)
-                                    }
-
-                                    web.bitmap = item
+                            .subscribeOn(networkScheduler)
+                            .observeOn(AndroidSchedulers.mainThread())
+                            .subscribe { bitmap ->
+                                faviconFetchSubscriptions.remove(url)
+                                val tag = holder.favicon.tag
+                                if (tag != null && tag == url.hashCode()) {
+                                    holder.favicon.setImageBitmap(bitmap)
                                 }
-                            })
 
-                    faviconFetchSubscriptions.put(url, faviconSubscription)
+                                web.bitmap = bitmap
+                            }
+
+                    faviconFetchSubscriptions[url] = faviconSubscription
                 }
                 else -> holder.favicon.setImageBitmap(web.bitmap)
             }

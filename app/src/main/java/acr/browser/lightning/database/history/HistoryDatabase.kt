@@ -64,14 +64,14 @@ class HistoryDatabase @Inject constructor(
         database.delete(TABLE_HISTORY, "$KEY_URL = ?", arrayOf(url))
     }
 
-    override fun visitHistoryItem(url: String, title: String?): Completable = Completable.create {
+    override fun visitHistoryItem(url: String, title: String?): Completable = Completable.fromAction {
         val values = ContentValues()
         values.put(KEY_TITLE, title ?: "")
         values.put(KEY_TIME_VISITED, System.currentTimeMillis())
 
         database.query(false, TABLE_HISTORY, arrayOf(KEY_URL), "$KEY_URL = ?", arrayOf(url), null, null, null, "1").use {
             if (it.count > 0) {
-                database.update(TABLE_HISTORY, values, KEY_URL + " = ?", arrayOf(url))
+                database.update(TABLE_HISTORY, values, "$KEY_URL = ?", arrayOf(url))
             } else {
                 addHistoryItem(HistoryItem(url, title ?: ""))
             }
@@ -117,7 +117,8 @@ class HistoryDatabase @Inject constructor(
     }
 
     @WorkerThread
-    @Synchronized internal fun getHistoryItem(url: String): String? =
+    @Synchronized
+    internal fun getHistoryItem(url: String): String? =
             database.query(TABLE_HISTORY, arrayOf(KEY_ID, KEY_URL, KEY_TITLE),
                     "$KEY_URL = ?", arrayOf(url), null, null, null, "1").use {
                 it.moveToFirst()

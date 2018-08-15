@@ -7,7 +7,7 @@ import acr.browser.lightning.dialog.BrowserDialog
 import acr.browser.lightning.dialog.DialogItem
 import acr.browser.lightning.extensions.resizeAndShow
 import acr.browser.lightning.favicon.FaviconModel
-import acr.browser.lightning.preference.PreferenceManager
+import acr.browser.lightning.preference.UserPreferences
 import acr.browser.lightning.view.webrtc.WebRtcPermissionsModel
 import acr.browser.lightning.view.webrtc.WebRtcPermissionsView
 import android.Manifest
@@ -22,10 +22,11 @@ import android.support.v7.app.AlertDialog
 import android.view.LayoutInflater
 import android.view.View
 import android.webkit.*
-import com.anthonycr.bonsai.Schedulers
 import com.anthonycr.grant.PermissionsManager
 import com.anthonycr.grant.PermissionsResultAction
+import io.reactivex.Scheduler
 import javax.inject.Inject
+import javax.inject.Named
 
 class LightningChromeClient(
         private val activity: Activity,
@@ -35,8 +36,9 @@ class LightningChromeClient(
     private val geoLocationPermissions = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
     private val uiController: UIController
     @Inject internal lateinit var faviconModel: FaviconModel
-    @Inject internal lateinit var preferences: PreferenceManager
+    @Inject internal lateinit var userPreferences: UserPreferences
     @Inject internal lateinit var webRtcPermissionsModel: WebRtcPermissionsModel
+    @Inject @field:Named("disk") internal lateinit var diskScheduler: Scheduler
 
     init {
         BrowserApp.appComponent.inject(this)
@@ -66,7 +68,7 @@ class LightningChromeClient(
         }
 
         faviconModel.cacheFaviconForUrl(icon, url)
-                .subscribeOn(Schedulers.io())
+                .subscribeOn(diskScheduler)
                 .subscribe()
     }
 
@@ -121,7 +123,7 @@ class LightningChromeClient(
 
     @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     override fun onPermissionRequest(request: PermissionRequest) {
-        if (preferences.webRtcEnabled) {
+        if (userPreferences.webRtcEnabled) {
             webRtcPermissionsModel.requestPermission(request, this)
         } else {
             request.deny()

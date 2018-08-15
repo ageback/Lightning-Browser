@@ -194,9 +194,7 @@ class BookmarkDatabase @Inject constructor(
     override fun getBookmarksFromFolderSorted(folder: String?): Single<List<HistoryItem>> = Single.fromCallable {
         val finalFolder = folder ?: ""
         database.query(TABLE_BOOKMARK, null, "$KEY_FOLDER=?", arrayOf(finalFolder), null, null, null).use {
-            val list = it.bindToHistoryItemList()
-            Collections.sort(list)
-            return@fromCallable list
+            return@fromCallable it.bindToHistoryItemList().sorted()
         }
     }
 
@@ -219,8 +217,7 @@ class BookmarkDatabase @Inject constructor(
                 folders.add(folder)
             }
 
-            Collections.sort(folders)
-            return@fromCallable folders
+            return@fromCallable folders.sorted()
         }
     }
 
@@ -301,7 +298,7 @@ class BookmarkDatabase @Inject constructor(
     private fun alternateSlashUrl(url: String): String = if (url.endsWith("/")) {
         url.substring(0, url.length - 1)
     } else {
-        url + '/'
+        "$url/"
     }
 
     companion object {

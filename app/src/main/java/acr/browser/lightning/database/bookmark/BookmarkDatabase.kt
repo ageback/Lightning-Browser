@@ -2,8 +2,8 @@ package acr.browser.lightning.database.bookmark
 
 import acr.browser.lightning.R
 import acr.browser.lightning.constant.FOLDER
+import acr.browser.lightning.database.DatabaseDelegate
 import acr.browser.lightning.database.HistoryItem
-import acr.browser.lightning.database.LazyDatabase
 import android.app.Application
 import android.content.ContentValues
 import android.database.Cursor
@@ -29,9 +29,7 @@ class BookmarkDatabase @Inject constructor(
 ) : SQLiteOpenHelper(application, DATABASE_NAME, null, DATABASE_VERSION), BookmarkRepository {
 
     private val defaultBookmarkTitle: String = application.getString(R.string.untitled)
-    private val lazy = LazyDatabase(this)
-    private val database: SQLiteDatabase
-        get() = lazy.db()
+    private val database: SQLiteDatabase by DatabaseDelegate()
 
     // Creating Tables
     override fun onCreate(db: SQLiteDatabase) {
@@ -194,9 +192,7 @@ class BookmarkDatabase @Inject constructor(
     override fun getBookmarksFromFolderSorted(folder: String?): Single<List<HistoryItem>> = Single.fromCallable {
         val finalFolder = folder ?: ""
         database.query(TABLE_BOOKMARK, null, "$KEY_FOLDER=?", arrayOf(finalFolder), null, null, null).use {
-            val list = it.bindToHistoryItemList()
-            Collections.sort(list)
-            return@fromCallable list
+            return@fromCallable it.bindToHistoryItemList().sorted()
         }
     }
 
@@ -219,8 +215,7 @@ class BookmarkDatabase @Inject constructor(
                 folders.add(folder)
             }
 
-            folders.sort()
-            return@fromCallable folders
+            return@fromCallable folders.sorted()
         }
     }
 

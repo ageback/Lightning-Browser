@@ -218,15 +218,15 @@ class BookmarksFragment : Fragment(), View.OnClickListener, View.OnLongClickList
                     if (folder == null) {
                         bookmarkModel.getFoldersSorted()
                     } else {
-                        Single.just(listOf())
+                        Single.just(emptyList())
                     }
-                }).toList()
-                .map { it.flatMap { it }.toMutableList() }
+                })
+                .toList()
+                .map { it.flatten().sorted() }
                 .subscribeOn(databaseScheduler)
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe { bookmarksAndFolders ->
                     uiModel.currentFolder = folder
-                    bookmarksAndFolders.sort()
                     setBookmarkDataSet(bookmarksAndFolders, animate)
                 }
     }

@@ -4,6 +4,7 @@ import acr.browser.lightning.R
 import acr.browser.lightning.constant.UTF8
 import acr.browser.lightning.database.HistoryItem
 import android.app.Application
+import okhttp3.HttpUrl
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.InputStream
@@ -15,8 +16,15 @@ class GoogleSuggestionsModel(application: Application) : BaseSuggestionsModel(ap
 
     private val searchSubtitle = application.getString(R.string.suggestion)
 
-    override fun createQueryUrl(query: String, language: String): String =
-            "https://suggestqueries.google.com/complete/search?output=toolbar&hl=$language&q=$query"
+    // https://suggestqueries.google.com/complete/search?output=toolbar&hl={language}&q={query}
+    override fun createQueryUrl(query: String, language: String): HttpUrl = HttpUrl.Builder()
+        .scheme("https")
+        .host("suggestqueries.google.com")
+        .encodedPath("/complete/search")
+        .addQueryParameter("output", "toolbar")
+        .addQueryParameter("hl", language)
+        .addQueryParameter("q", query)
+        .build()
 
     @Throws(Exception::class)
     override fun parseResults(inputStream: InputStream): List<HistoryItem> {

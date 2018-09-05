@@ -21,6 +21,7 @@ import acr.browser.lightning.dialog.LightningDialogBuilder
 import acr.browser.lightning.extensions.doOnLayout
 import acr.browser.lightning.extensions.removeFromParent
 import acr.browser.lightning.extensions.resizeAndShow
+import acr.browser.lightning.extensions.snackbar
 import acr.browser.lightning.html.download.DownloadsPage
 import acr.browser.lightning.html.history.HistoryPage
 import acr.browser.lightning.interpolator.BezierDecelerateInterpolator
@@ -81,6 +82,7 @@ import android.widget.*
 import android.widget.AdapterView.OnItemClickListener
 import android.widget.TextView.OnEditorActionListener
 import androidx.core.net.toUri
+import androidx.core.widget.toast
 import butterknife.ButterKnife
 import com.anthonycr.grant.PermissionsManager
 import io.reactivex.Completable
@@ -229,11 +231,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
         //TODO make sure dark theme flag gets set correctly
         isDarkTheme = userPreferences.useTheme != 0 || isIncognito()
-        iconColor = if (isDarkTheme) {
-            ThemeUtils.getIconDarkThemeColor(this)
-        } else {
-            ThemeUtils.getIconLightThemeColor(this)
-        }
+        iconColor = ThemeUtils.getIconThemeColor(this, isDarkTheme)
         disabledIconColor = if (isDarkTheme) {
             ContextCompat.getColor(this, R.color.icon_dark_theme_disabled)
         } else {
@@ -779,7 +777,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             R.id.action_copy -> {
                 if (currentUrl != null && !UrlUtils.isSpecialUrl(currentUrl)) {
                     clipboardManager.primaryClip = ClipData.newPlainText("label", currentUrl)
-                    Utils.showSnackbar(this, R.string.message_link_copied)
+                    snackbar(R.string.message_link_copied)
                 }
                 return true
             }
@@ -839,7 +837,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 if (boolean) {
                     suggestionsAdapter?.refreshBookmarks()
                     bookmarksView?.handleUpdatedUrl(url)
-                    Utils.showToast(this@BrowserActivity, R.string.message_bookmark_added)
+                    toast(R.string.message_bookmark_added)
                 }
             }
     }
@@ -1034,7 +1032,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             setPositiveButton(R.string.action_open) { _, _ -> onPositiveClick.invoke() }
         }.resizeAndShow()
 
-    override fun showSnackbar(@StringRes resource: Int) = Utils.showSnackbar(this, resource)
+    override fun showSnackbar(@StringRes resource: Int) = snackbar(resource)
 
     override fun tabCloseClicked(position: Int) {
         presenter?.deleteTab(position)
@@ -1052,7 +1050,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         if (savedUrl != "") {
             newTab(savedUrl, true)
 
-            Utils.showSnackbar(this, R.string.deleted_tab)
+            snackbar(R.string.deleted_tab)
         }
 
         userPreferences.savedUrl = ""

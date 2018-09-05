@@ -9,6 +9,7 @@ import acr.browser.lightning.database.bookmark.BookmarkExporter
 import acr.browser.lightning.database.bookmark.BookmarkRepository
 import acr.browser.lightning.dialog.BrowserDialog
 import acr.browser.lightning.dialog.DialogItem
+import acr.browser.lightning.extensions.snackbar
 import acr.browser.lightning.utils.Utils
 import android.Manifest
 import android.app.Application
@@ -16,6 +17,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.support.v7.app.AlertDialog
 import android.util.Log
+import androidx.core.widget.toast
 import com.anthonycr.grant.PermissionsManager
 import com.anthonycr.grant.PermissionsResultAction
 import io.reactivex.Scheduler
@@ -83,8 +85,8 @@ class BookmarkSettingsFragment : AbstractSettingsFragment() {
                                 .observeOn(AndroidSchedulers.mainThread())
                                 .subscribeBy(
                                     onComplete = {
-                                        activity?.let {
-                                            Utils.showSnackbar(it, "${it.getString(R.string.bookmark_export_path)} ${exportFile.path}")
+                                        activity?.apply {
+                                            snackbar("${getString(R.string.bookmark_export_path)} ${exportFile.path}")
                                         }
                                     },
                                     onError = { throwable ->
@@ -93,7 +95,7 @@ class BookmarkSettingsFragment : AbstractSettingsFragment() {
                                         if (activity != null && !activity.isFinishing && isAdded) {
                                             Utils.createInformativeDialog(activity, R.string.title_error, R.string.bookmark_export_failure)
                                         } else {
-                                            Utils.showToast(application, R.string.bookmark_export_failure)
+                                            application.toast(R.string.bookmark_export_failure)
                                         }
                                     }
                                 )
@@ -105,7 +107,7 @@ class BookmarkSettingsFragment : AbstractSettingsFragment() {
                     if (activity != null && !activity.isFinishing && isAdded) {
                         Utils.createInformativeDialog(activity, R.string.title_error, R.string.bookmark_export_failure)
                     } else {
-                        Utils.showToast(application, R.string.bookmark_export_failure)
+                        application.toast(R.string.bookmark_export_failure)
                     }
                 }
             })
@@ -186,7 +188,7 @@ class BookmarkSettingsFragment : AbstractSettingsFragment() {
         builder.setTitle(title + ": " + Environment.getExternalStorageDirectory())
 
         val fileList = loadFileList(path)
-        val fileNames = fileList.map { it.name }.toTypedArray()
+        val fileNames = fileList.map(File::getName).toTypedArray()
 
         builder.setItems(fileNames) { _, which ->
             if (fileList[which].isDirectory) {
@@ -203,9 +205,8 @@ class BookmarkSettingsFragment : AbstractSettingsFragment() {
                                 .subscribeOn(databaseScheduler)
                                 .observeOn(AndroidSchedulers.mainThread())
                                 .subscribe {
-                                    activity?.let {
-                                        val message = it.getString(R.string.message_import)
-                                        Utils.showSnackbar(it, importedBookmarks.size.toString() + " " + message)
+                                    activity?.apply {
+                                        snackbar("${importedBookmarks.size} ${getString(R.string.message_import)}")
                                     }
                                 }
                         },
@@ -215,7 +216,7 @@ class BookmarkSettingsFragment : AbstractSettingsFragment() {
                             if (activity != null && !activity.isFinishing && isAdded) {
                                 Utils.createInformativeDialog(activity, R.string.title_error, R.string.import_bookmark_error)
                             } else {
-                                Utils.showToast(application, R.string.import_bookmark_error)
+                                application.toast(R.string.import_bookmark_error)
                             }
                         }
                     )

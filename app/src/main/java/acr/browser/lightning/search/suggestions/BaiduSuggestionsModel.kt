@@ -4,11 +4,10 @@ import acr.browser.lightning.R
 import acr.browser.lightning.constant.UTF8
 import acr.browser.lightning.database.HistoryItem
 import acr.browser.lightning.extensions.map
-import acr.browser.lightning.utils.FileUtils
 import android.app.Application
 import okhttp3.HttpUrl
+import okhttp3.ResponseBody
 import org.json.JSONArray
-import java.io.InputStream
 
 /**
  * The search suggestions provider for the Baidu search engine.
@@ -32,12 +31,9 @@ class BaiduSuggestionsModel(
 
 
     @Throws(Exception::class)
-    override fun parseResults(inputStream: InputStream): List<HistoryItem> {
-        val content = FileUtils.readStringFromStream(inputStream, inputEncoding)
-        val responseArray = JSONArray(content)
-        val jsonArray = responseArray.getJSONArray(1)
-
-        return jsonArray
+    override fun parseResults(responseBody: ResponseBody): List<HistoryItem> {
+        return JSONArray(responseBody.string())
+            .getJSONArray(1)
             .map { it as String }
             .map { HistoryItem("$searchSubtitle \"$it\"", it, R.drawable.ic_search) }
     }

@@ -51,7 +51,7 @@ import javax.inject.Named
  */
 class LightningView(
     private val activity: Activity,
-    url: String?,
+    tabInitializer: TabInitializer,
     val isIncognito: Boolean
 ) {
 
@@ -67,7 +67,6 @@ class LightningView(
      *
      * @return the WebView instance of the tab, which can be null.
      */
-    @get:Synchronized
     var webView: WebView? = null
         private set
 
@@ -205,15 +204,7 @@ class LightningView(
         initializeSettings()
         initializePreferences(activity)
 
-        if (url != null) {
-            if (!url.isBlank()) {
-                tab.loadUrl(url, requestHeaders)
-            } else {
-                // don't load anything, the user is looking for a blank tab
-            }
-        } else {
-            loadHomePage()
-        }
+        tabInitializer.initialize(tab)
     }
 
     fun currentSslState(): SSLState = lightningWebClient.sslState
@@ -311,11 +302,7 @@ class LightningView(
 
         setUserAgent(context, userPreferences.userAgentChoice)
 
-        if (userPreferences.savePasswordsEnabled && !isIncognito) {
-            settings.saveFormData = true
-        } else {
-            settings.saveFormData = false
-        }
+        settings.saveFormData = userPreferences.savePasswordsEnabled && !isIncognito
 
         if (userPreferences.javaScriptEnabled) {
             settings.javaScriptEnabled = true
@@ -470,7 +457,6 @@ class LightningView(
     /**
      * Pause the current WebView instance.
      */
-    @Synchronized
     fun onPause() {
         webView?.onPause()
         Log.d(TAG, "WebView onPause: " + webView?.id)
@@ -479,25 +465,14 @@ class LightningView(
     /**
      * Resume the current WebView instance.
      */
-    @Synchronized
     fun onResume() {
         webView?.onResume()
         Log.d(TAG, "WebView onResume: " + webView?.id)
     }
 
     /**
-     * Notify the LightningView that there is low memory and
-     * for the WebView to free memory. Only applicable on
-     * pre-Lollipop devices.
-     */
-    @Synchronized
-    fun freeMemory() {
-    }
-
-    /**
      * Notify the WebView to stop the current load.
      */
-    @Synchronized
     fun stopLoading() {
         webView?.stopLoading()
     }
@@ -594,7 +569,6 @@ class LightningView(
      * WebView instance, which will trigger a
      * pause for all WebViews in the app.
      */
-    @Synchronized
     fun pauseTimers() {
         webView?.pauseTimers()
         Log.d(TAG, "Pausing JS timers")
@@ -605,7 +579,6 @@ class LightningView(
      * WebView instance, which will trigger a
      * resume for all WebViews in the app.
      */
-    @Synchronized
     fun resumeTimers() {
         webView?.resumeTimers()
         Log.d(TAG, "Resuming JS timers")
@@ -638,7 +611,6 @@ class LightningView(
      * this method will not have an affect as the
      * proxy must start before the load occurs.
      */
-    @Synchronized
     fun reload() {
         // Check if configured proxy is available
         if (!proxyUtils.isProxyReady(activity)) {
@@ -657,7 +629,6 @@ class LightningView(
      * @param text the text to search for.
      */
     @SuppressLint("NewApi")
-    @Synchronized
     fun find(text: String) {
         webView?.findAllAsync(text)
     }
@@ -673,7 +644,6 @@ class LightningView(
     // TODO fix bug where WebView.destroy is being called before the tab
     // is removed and would cause a memory leak if the parent check
     // was not in place.
-    @Synchronized
     fun onDestroy() {
         webView?.let { tab ->
             // Check to make sure the WebView has been removed
@@ -699,7 +669,6 @@ class LightningView(
      * Tell the WebView to navigate backwards
      * in its history to the previous page.
      */
-    @Synchronized
     fun goBack() {
         webView?.goBack()
     }
@@ -708,7 +677,6 @@ class LightningView(
      * Tell the WebView to navigate forwards
      * in its history to the next page.
      */
-    @Synchronized
     fun goForward() {
         webView?.goForward()
     }
@@ -719,7 +687,6 @@ class LightningView(
      * only have an affect after [LightningView.find]
      * is called. Otherwise it will do nothing.
      */
-    @Synchronized
     fun findNext() {
         webView?.findNext(true)
     }
@@ -730,7 +697,6 @@ class LightningView(
      * only have an affect after [LightningView.find]
      * is called. Otherwise it will do nothing.
      */
-    @Synchronized
     fun findPrevious() {
         webView?.findNext(false)
     }
@@ -740,9 +706,15 @@ class LightningView(
      * [LightningView.find] has been called.
      * Otherwise it will have no affect.
      */
-    @Synchronized
     fun clearFindMatches() {
         webView?.clearMatches()
+    }
+
+    /**
+     * Notifies the [WebView] whether the network is available or not.
+     */
+    fun setNetworkAvailable(isAvailable: Boolean) {
+        webView?.setNetworkAvailable(isAvailable)
     }
 
     /**
@@ -828,7 +800,6 @@ class LightningView(
      * @param url the non-null URL to attempt to load in
      * the WebView.
      */
-    @Synchronized
     fun loadUrl(url: String) {
         // Check if configured proxy is available
         if (!proxyUtils.isProxyReady(activity)) {

@@ -126,7 +126,7 @@ class TabsManager {
 
     fun extractSearchFromIntent(intent: Intent): String? {
         val query = intent.getStringExtra(SearchManager.QUERY)
-        val searchUrl = "${searchEngineProvider.getCurrentSearchEngine().queryUrl}${UrlUtils.QUERY_PLACE_HOLDER}"
+        val searchUrl = "${searchEngineProvider.provideSearchEngine().queryUrl}${UrlUtils.QUERY_PLACE_HOLDER}"
 
         return if (query?.isNotBlank() == true) {
             UrlUtils.smartUrlFilter(query, true, searchUrl)
@@ -144,8 +144,7 @@ class TabsManager {
         .observeOn(mainScheduler)
         .subscribeBy(
             onNext = { bundle ->
-                val item = requireNotNull(bundle)
-                val url = item.getString(URL_KEY)
+                val url = bundle.getString(URL_KEY)
                 if (url != null) {
                     val initializer = AsyncUrlInitializer(when {
                         UrlUtils.isBookmarkUrl(url) -> BookmarkPage(activity).createBookmarkPage()
@@ -157,7 +156,7 @@ class TabsManager {
 
                     newTab(activity, initializer, false)
                 } else {
-                    newTab(activity, BundleInitializer(item), false)
+                    newTab(activity, BundleInitializer(bundle), false)
                 }
             },
             onComplete = {

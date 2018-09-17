@@ -12,7 +12,8 @@ import acr.browser.lightning.browser.fragment.BookmarksFragment
 import acr.browser.lightning.browser.fragment.TabsFragment
 import acr.browser.lightning.constant.LOAD_READING_URL
 import acr.browser.lightning.controller.UIController
-import acr.browser.lightning.database.HistoryItem
+import acr.browser.lightning.database.Bookmark
+import acr.browser.lightning.database.HistoryEntry
 import acr.browser.lightning.database.bookmark.BookmarkRepository
 import acr.browser.lightning.database.history.HistoryRepository
 import acr.browser.lightning.dialog.BrowserDialog
@@ -87,6 +88,7 @@ import io.reactivex.Completable
 import io.reactivex.Scheduler
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.Disposable
+import io.reactivex.rxkotlin.subscribeBy
 import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.browser_content.*
@@ -613,7 +615,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
         setFullscreen(userPreferences.hideStatusBarEnabled, false)
 
-        val currentSearchEngine = searchEngineProvider.getCurrentSearchEngine()
+        val currentSearchEngine = searchEngineProvider.provideSearchEngine()
         searchText = currentSearchEngine.queryUrl
 
         updateCookiePreference().subscribeOn(Schedulers.computation()).subscribe()
@@ -753,9 +755,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             }
             R.id.action_add_to_homescreen -> {
                 if (currentView != null) {
-                    Utils.createShortcut(this, HistoryItem(currentView.url, currentView.title).apply {
-                        bitmap = currentView.favicon
-                    })
+                    Utils.createShortcut(this, HistoryEntry(currentView.url, currentView.title), currentView.favicon)
                 }
                 return true
             }
@@ -832,7 +832,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
     // By using a manager, adds a bookmark and notifies third parties about that
     private fun addBookmark(title: String, url: String) {
-        bookmarkManager.addBookmarkIfNotExists(HistoryItem(url, title))
+        bookmarkManager.addBookmarkIfNotExists(Bookmark.Entry(url, title, 0, null))
             .subscribeOn(databaseScheduler)
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe { boolean ->
@@ -845,7 +845,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     private fun deleteBookmark(title: String, url: String) {
-        bookmarkManager.deleteBookmark(HistoryItem(url, title))
+        bookmarkManager.deleteBookmark(Bookmark.Entry(url, title, 0, null))
             .subscribeOn(databaseScheduler)
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe { boolean ->
@@ -1083,13 +1083,18 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         }
     }
 
-    override fun bookmarkItemClicked(item: HistoryItem) {
-        presenter?.loadUrlInCurrentView(item.url)
+    override fun bookmarkItemClicked(entry: Bookmark.Entry) {
+        presenter?.loadUrlInCurrentView(entry.url)
         // keep any jank from happening when the drawer is closed after the URL starts to load
         Handlers.MAIN.postDelayed({ closeDrawers(null) }, 150)
     }
 
-    override fun handleHistoryChange() = openHistory()
+    override fun handleHistoryChange() {
+        HistoryPage().createHistoryPage()
+            .subscribeOn(databaseScheduler)
+            .observeOn(mainScheduler)
+            .subscribeBy(onSuccess = { tabsManager.currentTab?.reload() })
+    }
 
     /**
      * displays the WebView contained in the LightningView Also handles the
@@ -1388,7 +1393,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             return
         }
 
-        historyModel.visitHistoryItem(url, title)
+        historyModel.visitHistoryEntry(url, title)
             .subscribeOn(databaseScheduler)
             .subscribe()
     }
@@ -1531,7 +1536,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
      * used to allow uploading into the browser
      */
     override fun onActivityResult(requestCode: Int, resultCode: Int, intent: Intent?) {
-        if (API < Build.VERSION_CODES.LOLLIPOP) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
             if (requestCode == 1) {
                 val result = if (intent == null || resultCode != Activity.RESULT_OK) null else intent.data
                 uploadMessageCallback?.onReceiveValue(result)
@@ -1871,8 +1876,8 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         }
     }
 
-    override fun handleBookmarkDeleted(item: HistoryItem) {
-        bookmarksView?.handleBookmarkDeleted(item)
+    override fun handleBookmarkDeleted(bookmark: Bookmark) {
+        bookmarksView?.handleBookmarkDeleted(bookmark)
         handleBookmarksChange()
     }
 
@@ -1989,7 +1994,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         private const val FILE_CHOOSER_REQUEST_CODE = 1111
 
         // Constant
-        private val API = android.os.Build.VERSION.SDK_INT
         private val MATCH_PARENT = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         private val COVER_SCREEN_PARAMS = FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
 

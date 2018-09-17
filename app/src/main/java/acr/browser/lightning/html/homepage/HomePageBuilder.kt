@@ -10,9 +10,10 @@ import org.jsoup.Jsoup
 /**
  * A builder for the home page.
  */
-internal class HomePageBuilder(private val app: Application,
-                               private val searchEngineProvider: SearchEngineProvider) {
-
+class HomePageBuilder(
+    private val app: Application,
+    private val searchEngineProvider: SearchEngineProvider
+) {
 
     fun buildPage(): String {
         val html = MezzanineGenerator.HomePageReader().provideHtml()
@@ -22,7 +23,7 @@ internal class HomePageBuilder(private val app: Application,
             outputSettings().charset(UTF8)
         }
 
-        val currentSearchEngine = searchEngineProvider.getCurrentSearchEngine()
+        val currentSearchEngine = searchEngineProvider.provideSearchEngine()
 
         val iconUrl = currentSearchEngine.iconUrl
         val searchUrl = currentSearchEngine.queryUrl

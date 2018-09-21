@@ -16,6 +16,8 @@ import acr.browser.lightning.database.Bookmark
 import acr.browser.lightning.database.HistoryEntry
 import acr.browser.lightning.database.bookmark.BookmarkRepository
 import acr.browser.lightning.database.history.HistoryRepository
+import acr.browser.lightning.di.DatabaseScheduler
+import acr.browser.lightning.di.MainScheduler
 import acr.browser.lightning.dialog.BrowserDialog
 import acr.browser.lightning.dialog.DialogItem
 import acr.browser.lightning.dialog.LightningDialogBuilder
@@ -86,7 +88,6 @@ import butterknife.ButterKnife
 import com.anthonycr.grant.PermissionsManager
 import io.reactivex.Completable
 import io.reactivex.Scheduler
-import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.Disposable
 import io.reactivex.rxkotlin.subscribeBy
 import io.reactivex.schedulers.Schedulers
@@ -96,7 +97,6 @@ import kotlinx.android.synthetic.main.search_interface.*
 import kotlinx.android.synthetic.main.toolbar.*
 import java.io.IOException
 import javax.inject.Inject
-import javax.inject.Named
 
 abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIController, OnClickListener {
 
@@ -148,10 +148,9 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     @Inject internal lateinit var inputMethodManager: InputMethodManager
     @Inject internal lateinit var clipboardManager: ClipboardManager
     @Inject internal lateinit var notificationManager: NotificationManager
-    @Inject @field:Named("database") internal lateinit var databaseScheduler: Scheduler
-    @Inject @field:Named("main") internal lateinit var mainScheduler: Scheduler
-
-    private val tabsManager: TabsManager = TabsManager()
+    @Inject @field:DatabaseScheduler internal lateinit var databaseScheduler: Scheduler
+    @Inject @field:MainScheduler internal lateinit var mainScheduler: Scheduler
+    @Inject internal lateinit var tabsManager: TabsManager
 
     // Subscriptions
     private var networkDisposable: Disposable? = null
@@ -220,7 +219,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             }
         }
 
-        presenter = BrowserPresenter(this, isIncognito())
+        presenter = BrowserPresenter(this, isIncognito(), application, userPreferences, tabsManager, mainScheduler)
 
         initialize(savedInstanceState)
     }
@@ -834,7 +833,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     private fun addBookmark(title: String, url: String) {
         bookmarkManager.addBookmarkIfNotExists(Bookmark.Entry(url, title, 0, null))
             .subscribeOn(databaseScheduler)
-            .observeOn(AndroidSchedulers.mainThread())
+            .observeOn(mainScheduler)
             .subscribe { boolean ->
                 if (boolean) {
                     suggestionsAdapter?.refreshBookmarks()
@@ -847,7 +846,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     private fun deleteBookmark(title: String, url: String) {
         bookmarkManager.deleteBookmark(Bookmark.Entry(url, title, 0, null))
             .subscribeOn(databaseScheduler)
-            .observeOn(AndroidSchedulers.mainThread())
+            .observeOn(mainScheduler)
             .subscribe { boolean ->
                 if (boolean) {
                     suggestionsAdapter?.refreshBookmarks()
@@ -1072,7 +1071,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         if (!UrlUtils.isSpecialUrl(url)) {
             bookmarkManager.isBookmark(url)
                 .subscribeOn(databaseScheduler)
-                .observeOn(AndroidSchedulers.mainThread())
+                .observeOn(mainScheduler)
                 .subscribe { boolean ->
                     if (boolean) {
                         deleteBookmark(title, url)
@@ -1267,7 +1266,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
         networkDisposable = networkConnectivityModel
             .connectivity()
-            .subscribeOn(AndroidSchedulers.mainThread())
+            .subscribeOn(mainScheduler)
             .subscribe { connected ->
                 Log.d(TAG, "Network connected: $connected")
                 tabsManager.notifyConnectionStatus(connected)

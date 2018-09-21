@@ -1,13 +1,12 @@
 package acr.browser.lightning.browser
 
-import acr.browser.lightning.BrowserApp
 import acr.browser.lightning.BuildConfig
 import acr.browser.lightning.R
 import acr.browser.lightning.constant.FILE
 import acr.browser.lightning.constant.INTENT_ORIGIN
 import acr.browser.lightning.constant.SCHEME_BOOKMARKS
 import acr.browser.lightning.constant.SCHEME_HOMEPAGE
-import acr.browser.lightning.controller.UIController
+import acr.browser.lightning.di.MainScheduler
 import acr.browser.lightning.html.bookmark.BookmarkPage
 import acr.browser.lightning.html.homepage.StartPage
 import acr.browser.lightning.preference.UserPreferences
@@ -21,26 +20,28 @@ import android.app.Application
 import android.content.Intent
 import android.util.Log
 import android.webkit.URLUtil
-import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.Scheduler
 import io.reactivex.disposables.Disposable
-import javax.inject.Inject
+import io.reactivex.rxkotlin.subscribeBy
 
 /**
  * Presenter in charge of keeping track of the current tab and setting the current tab of the
  * browser.
  */
-class BrowserPresenter(private val view: BrowserView, private val isIncognito: Boolean) {
+class BrowserPresenter(
+    private val view: BrowserView,
+    private val isIncognito: Boolean,
+    private val application: Application,
+    private val userPreferences: UserPreferences,
+    private val tabsModel: TabsManager,
+    @MainScheduler private val mainScheduler: Scheduler
+) {
 
-    @Inject internal lateinit var application: Application
-    @Inject internal lateinit var userPreferences: UserPreferences
-    private val tabsModel: TabsManager
     private var currentTab: LightningView? = null
     private var shouldClose: Boolean = false
     private var sslStateSubscription: Disposable? = null
 
     init {
-        BrowserApp.appComponent.inject(this)
-        tabsModel = (view as UIController).getTabModel()
         tabsModel.addTabNumberChangedListener(view::updateTabNumber)
     }
 
@@ -51,13 +52,14 @@ class BrowserPresenter(private val view: BrowserView, private val isIncognito: B
      */
     fun setupTabs(intent: Intent?) {
         tabsModel.initializeTabs(view as Activity, intent, isIncognito)
-            .subscribeOn(AndroidSchedulers.mainThread())
-            .subscribe {
-                // At this point we always have at least a tab in the tab manager
-                view.notifyTabViewInitialized()
-                view.updateTabNumber(tabsModel.size())
-                tabChanged(tabsModel.last())
-            }
+            .subscribeBy(
+                onSuccess = {
+                    // At this point we always have at least a tab in the tab manager
+                    view.notifyTabViewInitialized()
+                    view.updateTabNumber(tabsModel.size())
+                    tabChanged(tabsModel.positionOf(it))
+                }
+            )
     }
 
     /**
@@ -77,7 +79,7 @@ class BrowserPresenter(private val view: BrowserView, private val isIncognito: B
         sslStateSubscription?.dispose()
         sslStateSubscription = newTab
             ?.sslStateObservable()
-            ?.observeOn(AndroidSchedulers.mainThread())
+            ?.observeOn(mainScheduler)
             ?.subscribe(view::updateSslState)
 
         val webView = newTab?.webView

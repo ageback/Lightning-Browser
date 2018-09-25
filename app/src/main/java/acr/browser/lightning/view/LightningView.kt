@@ -11,12 +11,13 @@ import acr.browser.lightning.constant.SCHEME_BOOKMARKS
 import acr.browser.lightning.constant.SCHEME_HOMEPAGE
 import acr.browser.lightning.controller.UIController
 import acr.browser.lightning.di.DatabaseScheduler
+import acr.browser.lightning.di.DiskScheduler
 import acr.browser.lightning.di.MainScheduler
 import acr.browser.lightning.dialog.LightningDialogBuilder
 import acr.browser.lightning.download.LightningDownloadListener
-import acr.browser.lightning.html.bookmark.BookmarkPage
-import acr.browser.lightning.html.download.DownloadsPage
-import acr.browser.lightning.html.homepage.StartPage
+import acr.browser.lightning.html.bookmark.BookmarkPageFactory
+import acr.browser.lightning.html.download.DownloadPageFactory
+import acr.browser.lightning.html.homepage.HomePageFactory
 import acr.browser.lightning.preference.UserPreferences
 import acr.browser.lightning.ssl.SSLState
 import acr.browser.lightning.utils.ProxyUtils
@@ -52,7 +53,10 @@ import javax.inject.Inject
 class LightningView(
     private val activity: Activity,
     tabInitializer: TabInitializer,
-    val isIncognito: Boolean
+    val isIncognito: Boolean,
+    private val homePageFactory: HomePageFactory,
+    private val bookmarkPageFactory: BookmarkPageFactory,
+    private val downloadPageFactory: DownloadPageFactory
 ) {
 
     /**
@@ -114,6 +118,7 @@ class LightningView(
     @Inject internal lateinit var dialogBuilder: LightningDialogBuilder
     @Inject internal lateinit var proxyUtils: ProxyUtils
     @Inject @field:DatabaseScheduler internal lateinit var databaseScheduler: Scheduler
+    @Inject @field:DiskScheduler internal lateinit var diskScheduler: Scheduler
     @Inject @field:MainScheduler internal lateinit var mainScheduler: Scheduler
 
     private val lightningWebClient: LightningWebClient
@@ -233,8 +238,8 @@ class LightningView(
      * URL in the WebView on the UI thread.
      */
     private fun loadStartPage() {
-        StartPage()
-            .createHomePage()
+        homePageFactory
+            .buildPage()
             .subscribeOn(databaseScheduler)
             .observeOn(mainScheduler)
             .subscribe(this::loadUrl)
@@ -245,9 +250,9 @@ class LightningView(
      * the URL in the WebView on the UI thread. It also caches the default folder icon locally.
      */
     fun loadBookmarkPage() {
-        BookmarkPage(activity)
-            .createBookmarkPage()
-            .subscribeOn(databaseScheduler)
+        bookmarkPageFactory
+            .buildPage()
+            .subscribeOn(diskScheduler)
             .observeOn(mainScheduler)
             .subscribe(this::loadUrl)
     }
@@ -257,8 +262,8 @@ class LightningView(
      * the URL in the WebView on the UI thread. It also caches the default folder icon locally.
      */
     fun loadDownloadsPage() {
-        DownloadsPage()
-            .getDownloadsPage()
+        downloadPageFactory
+            .buildPage()
             .subscribeOn(databaseScheduler)
             .observeOn(mainScheduler)
             .subscribe(this::loadUrl)

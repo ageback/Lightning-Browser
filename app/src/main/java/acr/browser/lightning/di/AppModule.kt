@@ -1,6 +1,9 @@
 package acr.browser.lightning.di
 
 import acr.browser.lightning.BrowserApp
+import acr.browser.lightning.html.bookmark.BookmarkPageReader
+import acr.browser.lightning.html.ListPageReader
+import acr.browser.lightning.html.homepage.HomePageReader
 import acr.browser.lightning.search.suggestions.RequestFactory
 import acr.browser.lightning.utils.FileUtils
 import android.app.Application
@@ -15,6 +18,7 @@ import android.os.Build
 import android.support.annotation.RequiresApi
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
+import com.anthonycr.mezzanine.MezzanineGenerator
 import dagger.Module
 import dagger.Provides
 import io.reactivex.Scheduler
@@ -129,6 +133,15 @@ class AppModule(private val browserApp: BrowserApp) {
     @Provides
     @Singleton
     fun provideI2PAndroidHelper(): I2PAndroidHelper = I2PAndroidHelper(browserApp)
+
+    @Provides
+    fun providesListPageReader(): ListPageReader = MezzanineGenerator.ListPageReader()
+
+    @Provides
+    fun providesHomePageReader(): HomePageReader = MezzanineGenerator.HomePageReader()
+
+    @Provides
+    fun providesBookmarkPageReader(): BookmarkPageReader = MezzanineGenerator.BookmarkPageReader()
 
 }
 

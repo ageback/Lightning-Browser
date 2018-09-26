@@ -12,17 +12,22 @@ import acr.browser.lightning.browser.fragment.BookmarksFragment
 import acr.browser.lightning.browser.fragment.TabsFragment
 import acr.browser.lightning.constant.LOAD_READING_URL
 import acr.browser.lightning.controller.UIController
-import acr.browser.lightning.database.HistoryItem
+import acr.browser.lightning.database.Bookmark
+import acr.browser.lightning.database.HistoryEntry
 import acr.browser.lightning.database.bookmark.BookmarkRepository
 import acr.browser.lightning.database.history.HistoryRepository
+import acr.browser.lightning.di.DatabaseScheduler
+import acr.browser.lightning.di.MainScheduler
 import acr.browser.lightning.dialog.BrowserDialog
 import acr.browser.lightning.dialog.DialogItem
 import acr.browser.lightning.dialog.LightningDialogBuilder
 import acr.browser.lightning.extensions.doOnLayout
 import acr.browser.lightning.extensions.removeFromParent
 import acr.browser.lightning.extensions.resizeAndShow
-import acr.browser.lightning.html.download.DownloadsPage
-import acr.browser.lightning.html.history.HistoryPage
+import acr.browser.lightning.extensions.snackbar
+import acr.browser.lightning.html.bookmark.BookmarkPageFactory
+import acr.browser.lightning.html.history.HistoryPageFactory
+import acr.browser.lightning.html.homepage.HomePageFactory
 import acr.browser.lightning.interpolator.BezierDecelerateInterpolator
 import acr.browser.lightning.network.NetworkConnectivityModel
 import acr.browser.lightning.notifications.IncognitoNotification
@@ -32,13 +37,12 @@ import acr.browser.lightning.search.SuggestionsAdapter
 import acr.browser.lightning.settings.activity.SettingsActivity
 import acr.browser.lightning.ssl.SSLState
 import acr.browser.lightning.utils.*
-import acr.browser.lightning.view.Handlers
-import acr.browser.lightning.view.LightningView
+import acr.browser.lightning.view.*
 import acr.browser.lightning.view.SearchView
 import android.app.Activity
+import android.app.NotificationManager
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -76,26 +80,24 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient.CustomViewCallback
-import android.webkit.WebIconDatabase
-import android.webkit.WebView
 import android.widget.*
 import android.widget.AdapterView.OnItemClickListener
 import android.widget.TextView.OnEditorActionListener
+import androidx.core.net.toUri
+import androidx.core.widget.toast
 import butterknife.ButterKnife
 import com.anthonycr.grant.PermissionsManager
 import io.reactivex.Completable
 import io.reactivex.Scheduler
-import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.Disposable
+import io.reactivex.rxkotlin.subscribeBy
 import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.browser_content.*
 import kotlinx.android.synthetic.main.search_interface.*
 import kotlinx.android.synthetic.main.toolbar.*
-import java.io.File
 import java.io.IOException
 import javax.inject.Inject
-import javax.inject.Named
 
 abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIController, OnClickListener {
 
@@ -144,9 +146,18 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     @Inject internal lateinit var searchBoxModel: SearchBoxModel
     @Inject internal lateinit var searchEngineProvider: SearchEngineProvider
     @Inject internal lateinit var networkConnectivityModel: NetworkConnectivityModel
-    @Inject @field:Named("database") internal lateinit var databaseScheduler: Scheduler
-
-    private val tabsManager: TabsManager = TabsManager()
+    @Inject internal lateinit var inputMethodManager: InputMethodManager
+    @Inject internal lateinit var clipboardManager: ClipboardManager
+    @Inject internal lateinit var notificationManager: NotificationManager
+    @Inject @field:DatabaseScheduler internal lateinit var databaseScheduler: Scheduler
+    @Inject @field:MainScheduler internal lateinit var mainScheduler: Scheduler
+    @Inject internal lateinit var tabsManager: TabsManager
+    @Inject internal lateinit var homePageFactory: HomePageFactory
+    @Inject internal lateinit var bookmarkPageFactory: BookmarkPageFactory
+    @Inject internal lateinit var historyPageFactory: HistoryPageFactory
+    @Inject internal lateinit var historyPageInitializer: HistoryPageInitializer
+    @Inject internal lateinit var downloadPageInitializer: DownloadPageInitializer
+    @Inject internal lateinit var homePageInitializer: HomePageInitializer
 
     // Subscriptions
     private var networkDisposable: Disposable? = null
@@ -204,7 +215,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         setContentView(R.layout.activity_main)
         ButterKnife.bind(this)
 
-        val incognitoNotification = IncognitoNotification(this)
+        val incognitoNotification = IncognitoNotification(this, notificationManager)
         tabsManager.addTabNumberChangedListener {
             if (isIncognito()) {
                 if (it == 0) {
@@ -215,7 +226,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             }
         }
 
-        presenter = BrowserPresenter(this, isIncognito())
+        presenter = BrowserPresenter(this, isIncognito(), application, userPreferences, tabsManager, mainScheduler, homePageFactory, bookmarkPageFactory)
 
         initialize(savedInstanceState)
     }
@@ -227,11 +238,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
         //TODO make sure dark theme flag gets set correctly
         isDarkTheme = userPreferences.useTheme != 0 || isIncognito()
-        iconColor = if (isDarkTheme) {
-            ThemeUtils.getIconDarkThemeColor(this)
-        } else {
-            ThemeUtils.getIconLightThemeColor(this)
-        }
+        iconColor = ThemeUtils.getIconThemeColor(this, isDarkTheme)
         disabledIconColor = if (isDarkTheme) {
             ContextCompat.getColor(this, R.color.icon_dark_theme_disabled)
         } else {
@@ -295,10 +302,10 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         fragmentManager.executePendingTransactions()
 
         fragmentManager
-                .beginTransaction()
-                .replace(getTabsFragmentViewId(), tabsView as Fragment, TAG_TABS_FRAGMENT)
-                .replace(getBookmarksFragmentViewId(), bookmarksView as Fragment, TAG_BOOKMARK_FRAGMENT)
-                .commit()
+            .beginTransaction()
+            .replace(getTabsFragmentViewId(), tabsView as Fragment, TAG_TABS_FRAGMENT)
+            .replace(getBookmarksFragmentViewId(), bookmarksView as Fragment, TAG_BOOKMARK_FRAGMENT)
+            .commit()
         if (shouldShowTabsInDrawer) {
             toolbar_layout.removeView(findViewById(R.id.tabs_toolbar_container))
         }
@@ -384,10 +391,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         drawer_layout.setDrawerShadow(R.drawable.drawer_right_shadow, GravityCompat.END)
         drawer_layout.setDrawerShadow(R.drawable.drawer_left_shadow, GravityCompat.START)
 
-        if (API <= Build.VERSION_CODES.JELLY_BEAN_MR2) {
-            WebIconDatabase.getInstance().open(getDir("icons", Context.MODE_PRIVATE).path)
-        }
-
         var intent: Intent? = if (savedInstanceState == null) {
             intent
         } else {
@@ -439,11 +442,11 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
     protected fun panicClean() {
         Log.d(TAG, "Closing browser")
-        tabsManager.newTab(this, "", false)
+        tabsManager.newTab(this, NoOpInitializer(), false)
         tabsManager.switchToTab(0)
         tabsManager.clearSavedState()
 
-        HistoryPage.deleteHistoryPage(application).subscribe()
+        historyPageFactory.deleteHistoryPage().subscribe()
         closeBrowser()
         // System exit needed in the case of receiving
         // the panic intent since finish() isn't completely
@@ -452,10 +455,10 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     private inner class SearchListenerClass : OnKeyListener,
-            OnEditorActionListener,
-            OnFocusChangeListener,
-            SearchView.PreFocusListener,
-            TextWatcher {
+        OnEditorActionListener,
+        OnFocusChangeListener,
+        SearchView.PreFocusListener,
+        TextWatcher {
         override fun beforeTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) = Unit
 
         override fun onTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) = Unit
@@ -470,8 +473,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             when (keyCode) {
                 KeyEvent.KEYCODE_ENTER -> {
                     searchView?.let {
-                        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                        imm.hideSoftInputFromWindow(it.windowToken, 0)
+                        inputMethodManager.hideSoftInputFromWindow(it.windowToken, 0)
                         searchTheWeb(it.text.toString())
                     }
 
@@ -488,14 +490,13 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             // hide the keyboard and search the web when the enter key
             // button is pressed
             if (actionId == EditorInfo.IME_ACTION_GO
-                    || actionId == EditorInfo.IME_ACTION_DONE
-                    || actionId == EditorInfo.IME_ACTION_NEXT
-                    || actionId == EditorInfo.IME_ACTION_SEND
-                    || actionId == EditorInfo.IME_ACTION_SEARCH
-                    || arg2?.action == KeyEvent.KEYCODE_ENTER) {
+                || actionId == EditorInfo.IME_ACTION_DONE
+                || actionId == EditorInfo.IME_ACTION_NEXT
+                || actionId == EditorInfo.IME_ACTION_SEND
+                || actionId == EditorInfo.IME_ACTION_SEARCH
+                || arg2?.action == KeyEvent.KEYCODE_ENTER) {
                 searchView?.let {
-                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                    imm.hideSoftInputFromWindow(it.windowToken, 0)
+                    inputMethodManager.hideSoftInputFromWindow(it.windowToken, 0)
                     searchTheWeb(it.text.toString())
                 }
 
@@ -519,9 +520,8 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             }
 
             if (!hasFocus) {
-                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
                 searchView?.let {
-                    imm.hideSoftInputFromWindow(it.windowToken, 0)
+                    inputMethodManager.hideSoftInputFromWindow(it.windowToken, 0)
                 }
             }
         }
@@ -621,7 +621,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
         setFullscreen(userPreferences.hideStatusBarEnabled, false)
 
-        val currentSearchEngine = searchEngineProvider.getCurrentSearchEngine()
+        val currentSearchEngine = searchEngineProvider.provideSearchEngine()
         searchText = currentSearchEngine.queryUrl
 
         updateCookiePreference().subscribeOn(Schedulers.computation()).subscribe()
@@ -639,11 +639,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             if (searchView?.hasFocus() == true) {
                 searchView?.let { searchTheWeb(it.text.toString()) }
             }
-        } else if (keyCode == KeyEvent.KEYCODE_MENU
-                && Build.VERSION.SDK_INT <= Build.VERSION_CODES.JELLY_BEAN
-                && Build.MANUFACTURER.compareTo("LGE") == 0) {
-            // Workaround for stupid LG devices that crash
-            return true
         } else if (keyCode == KeyEvent.KEYCODE_BACK) {
             keyDownStartTime = System.currentTimeMillis()
             Handlers.MAIN.postDelayed(longPressBackRunnable, ViewConfiguration.getLongPressTimeout().toLong())
@@ -652,13 +647,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_MENU
-                && Build.VERSION.SDK_INT <= Build.VERSION_CODES.JELLY_BEAN
-                && Build.MANUFACTURER.compareTo("LGE") == 0) {
-            // Workaround for stupid LG devices that crash
-            openOptionsMenu()
-            return true
-        } else if (keyCode == KeyEvent.KEYCODE_BACK) {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
             Handlers.MAIN.removeCallbacks(longPressBackRunnable)
             if (System.currentTimeMillis() - keyDownStartTime > ViewConfiguration.getLongPressTimeout()) {
                 return true
@@ -679,7 +668,10 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                     }
                     KeyEvent.KEYCODE_T -> {
                         // Open new tab
-                        newTab(null, true)
+                        presenter?.newTab(
+                            homePageInitializer,
+                            true
+                        )
                         return true
                     }
                     KeyEvent.KEYCODE_W -> {
@@ -769,14 +761,12 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             }
             R.id.action_add_to_homescreen -> {
                 if (currentView != null) {
-                    Utils.createShortcut(this, HistoryItem(currentView.url, currentView.title).apply {
-                        bitmap = currentView.favicon
-                    })
+                    Utils.createShortcut(this, HistoryEntry(currentView.url, currentView.title), currentView.favicon)
                 }
                 return true
             }
             R.id.action_new_tab -> {
-                newTab(null, true)
+                presenter?.newTab(homePageInitializer, true)
                 return true
             }
             R.id.action_incognito -> {
@@ -794,9 +784,8 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             }
             R.id.action_copy -> {
                 if (currentUrl != null && !UrlUtils.isSpecialUrl(currentUrl)) {
-                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.primaryClip = ClipData.newPlainText("label", currentUrl)
-                    Utils.showSnackbar(this, R.string.message_link_copied)
+                    clipboardManager.primaryClip = ClipData.newPlainText("label", currentUrl)
+                    snackbar(R.string.message_link_copied)
                 }
                 return true
             }
@@ -849,28 +838,28 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
     // By using a manager, adds a bookmark and notifies third parties about that
     private fun addBookmark(title: String, url: String) {
-        bookmarkManager.addBookmarkIfNotExists(HistoryItem(url, title))
-                .subscribeOn(databaseScheduler)
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe { boolean ->
-                    if (boolean) {
-                        suggestionsAdapter?.refreshBookmarks()
-                        bookmarksView?.handleUpdatedUrl(url)
-                        Utils.showToast(this@BrowserActivity, R.string.message_bookmark_added)
-                    }
+        bookmarkManager.addBookmarkIfNotExists(Bookmark.Entry(url, title, 0, Bookmark.Folder.Root))
+            .subscribeOn(databaseScheduler)
+            .observeOn(mainScheduler)
+            .subscribe { boolean ->
+                if (boolean) {
+                    suggestionsAdapter?.refreshBookmarks()
+                    bookmarksView?.handleUpdatedUrl(url)
+                    toast(R.string.message_bookmark_added)
                 }
+            }
     }
 
     private fun deleteBookmark(title: String, url: String) {
-        bookmarkManager.deleteBookmark(HistoryItem(url, title))
-                .subscribeOn(databaseScheduler)
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe { boolean ->
-                    if (boolean) {
-                        suggestionsAdapter?.refreshBookmarks()
-                        bookmarksView?.handleUpdatedUrl(url)
-                    }
+        bookmarkManager.deleteBookmark(Bookmark.Entry(url, title, 0, Bookmark.Folder.Root))
+            .subscribeOn(databaseScheduler)
+            .observeOn(mainScheduler)
+            .subscribe { boolean ->
+                if (boolean) {
+                    suggestionsAdapter?.refreshBookmarks()
+                    bookmarksView?.handleUpdatedUrl(url)
                 }
+            }
     }
 
     private fun putToolbarInRoot() {
@@ -894,21 +883,21 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     private fun setWebViewTranslation(translation: Float) =
-            if (isFullScreen) {
-                currentTabView?.translationY = translation
-            } else {
-                currentTabView?.translationY = 0f
-            }
+        if (isFullScreen) {
+            currentTabView?.translationY = translation
+        } else {
+            currentTabView?.translationY = 0f
+        }
 
     /**
      * method that shows a dialog asking what string the user wishes to search
      * for. It highlights the text entered.
      */
     private fun findInPage() = BrowserDialog.showEditText(
-            this,
-            R.string.action_find,
-            R.string.search_hint,
-            R.string.search_hint
+        this,
+        R.string.action_find,
+        R.string.search_hint,
+        R.string.search_hint
     ) { text ->
         if (text.isNotEmpty()) {
             presenter?.findInPage(text)
@@ -932,13 +921,13 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             return
         }
         BrowserDialog.show(this, R.string.dialog_title_close_browser,
-                DialogItem(R.string.close_tab) {
-                    presenter?.deleteTab(position)
-                },
-                DialogItem(R.string.close_other_tabs) {
-                    presenter?.closeAllOtherTabs()
-                },
-                DialogItem(title = R.string.close_all_tabs, onClick = this::closeBrowser))
+            DialogItem(R.string.close_tab) {
+                presenter?.deleteTab(position)
+            },
+            DialogItem(R.string.close_other_tabs) {
+                presenter?.closeAllOtherTabs()
+            },
+            DialogItem(title = R.string.close_all_tabs, onClick = this::closeBrowser))
     }
 
     override fun notifyTabViewRemoved(position: Int) {
@@ -1043,15 +1032,15 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     override fun showBlockedLocalFileDialog(onPositiveClick: Function0<Unit>) =
-            AlertDialog.Builder(this).apply {
-                setCancelable(true)
-                setTitle(R.string.title_warning)
-                setMessage(R.string.message_blocked_local)
-                setNegativeButton(android.R.string.cancel, null)
-                setPositiveButton(R.string.action_open) { _, _ -> onPositiveClick.invoke() }
-            }.resizeAndShow()
+        AlertDialog.Builder(this).apply {
+            setCancelable(true)
+            setTitle(R.string.title_warning)
+            setMessage(R.string.message_blocked_local)
+            setNegativeButton(android.R.string.cancel, null)
+            setPositiveButton(R.string.action_open) { _, _ -> onPositiveClick.invoke() }
+        }.resizeAndShow()
 
-    override fun showSnackbar(@StringRes resource: Int) = Utils.showSnackbar(this, resource)
+    override fun showSnackbar(@StringRes resource: Int) = snackbar(resource)
 
     override fun tabCloseClicked(position: Int) {
         presenter?.deleteTab(position)
@@ -1060,16 +1049,19 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     override fun tabClicked(position: Int) = showTab(position)
 
     override fun newTabButtonClicked() {
-        presenter?.newTab(null, true)
+        presenter?.newTab(
+            homePageInitializer,
+            true
+        )
     }
 
     override fun newTabButtonLongClicked() {
         val savedUrl = userPreferences.savedUrl
 
         if (savedUrl != "") {
-            newTab(savedUrl, true)
+            presenter?.newTab(UrlInitializer(savedUrl), true)
 
-            Utils.showSnackbar(this, R.string.deleted_tab)
+            snackbar(R.string.deleted_tab)
         }
 
         userPreferences.savedUrl = ""
@@ -1085,25 +1077,31 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
         if (!UrlUtils.isSpecialUrl(url)) {
             bookmarkManager.isBookmark(url)
-                    .subscribeOn(databaseScheduler)
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe { boolean ->
-                        if (boolean) {
-                            deleteBookmark(title, url)
-                        } else {
-                            addBookmark(title, url)
-                        }
+                .subscribeOn(databaseScheduler)
+                .observeOn(mainScheduler)
+                .subscribe { boolean ->
+                    if (boolean) {
+                        deleteBookmark(title, url)
+                    } else {
+                        addBookmark(title, url)
                     }
+                }
         }
     }
 
-    override fun bookmarkItemClicked(item: HistoryItem) {
-        presenter?.loadUrlInCurrentView(item.url)
+    override fun bookmarkItemClicked(entry: Bookmark.Entry) {
+        presenter?.loadUrlInCurrentView(entry.url)
         // keep any jank from happening when the drawer is closed after the URL starts to load
         Handlers.MAIN.postDelayed({ closeDrawers(null) }, 150)
     }
 
-    override fun handleHistoryChange() = openHistory()
+    override fun handleHistoryChange() {
+        historyPageFactory
+            .buildPage()
+            .subscribeOn(databaseScheduler)
+            .observeOn(mainScheduler)
+            .subscribeBy(onSuccess = { tabsManager.currentTab?.reload() })
+    }
 
     /**
      * displays the WebView contained in the LightningView Also handles the
@@ -1119,16 +1117,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     protected fun handleNewIntent(intent: Intent) {
         presenter?.onNewIntent(intent)
     }
-
-    override fun onTrimMemory(level: Int) {
-        if (level > TRIM_MEMORY_MODERATE && Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT) {
-            Log.d(TAG, "Low Memory, Free Memory")
-            presenter?.onAppLowMemory()
-        }
-    }
-
-    // TODO move to presenter
-    private fun newTab(url: String?, show: Boolean): Boolean = presenter?.newTab(url, show) != false
 
     protected fun performExitCleanUp() {
         val currentTab = tabsManager.currentTab
@@ -1168,20 +1156,20 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     private fun initializeToolbarHeight(configuration: Configuration) =
-            ui_layout.doOnLayout {
-                // TODO externalize the dimensions
-                val toolbarSize = if (configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
-                    // In portrait toolbar should be 56 dp tall
-                    Utils.dpToPx(56f)
-                } else {
-                    // In landscape toolbar should be 48 dp tall
-                    Utils.dpToPx(52f)
-                }
-                toolbar.layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, toolbarSize)
-                toolbar.minimumHeight = toolbarSize
-                toolbar.doOnLayout { setWebViewTranslation(toolbar_layout.height.toFloat()) }
-                toolbar.requestLayout()
+        ui_layout.doOnLayout {
+            // TODO externalize the dimensions
+            val toolbarSize = if (configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
+                // In portrait toolbar should be 56 dp tall
+                Utils.dpToPx(56f)
+            } else {
+                // In landscape toolbar should be 48 dp tall
+                Utils.dpToPx(52f)
             }
+            toolbar.layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, toolbarSize)
+            toolbar.minimumHeight = toolbarSize
+            toolbar.doOnLayout { setWebViewTranslation(toolbar_layout.height.toFloat()) }
+            toolbar.requestLayout()
+        }
 
     override fun closeBrowser() {
         content_frame.setBackgroundColor(backgroundColor)
@@ -1285,12 +1273,12 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         initializePreferences()
 
         networkDisposable = networkConnectivityModel
-                .connectivity()
-                .subscribeOn(AndroidSchedulers.mainThread())
-                .subscribe { connected ->
-                    Log.d(TAG, "Network connected: $connected")
-                    tabsManager.notifyConnectionStatus(connected)
-                }
+            .connectivity()
+            .subscribeOn(mainScheduler)
+            .subscribe { connected ->
+                Log.d(TAG, "Network connected: $connected")
+                tabsManager.notifyConnectionStatus(connected)
+            }
 
         if (isFullScreen) {
             overlayToolbarOnWebView()
@@ -1359,7 +1347,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                     currentUiColor = animatedColor
                     toolbar_layout.setBackgroundColor(animatedColor)
                     searchBackground?.background?.setColorFilter(DrawableUtils.mixColor(interpolatedTime,
-                            startSearchColor, finalSearchColor), PorterDuff.Mode.SRC_IN)
+                        startSearchColor, finalSearchColor), PorterDuff.Mode.SRC_IN)
                 }
             }
             animation.duration = 300
@@ -1368,11 +1356,11 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     private fun getSearchBarColor(requestedColor: Int, defaultColor: Int): Int =
-            if (requestedColor == defaultColor) {
-                if (isDarkTheme) DrawableUtils.mixColor(0.25f, defaultColor, Color.WHITE) else Color.WHITE
-            } else {
-                DrawableUtils.mixColor(0.25f, requestedColor, Color.WHITE)
-            }
+        if (requestedColor == defaultColor) {
+            if (isDarkTheme) DrawableUtils.mixColor(0.25f, defaultColor, Color.WHITE) else Color.WHITE
+        } else {
+            DrawableUtils.mixColor(0.25f, requestedColor, Color.WHITE)
+        }
 
     override fun getUseDarkTheme(): Boolean = isDarkTheme
 
@@ -1397,7 +1385,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 arrowImageView?.setImageDrawable(ThemeUtils.getThemedDrawable(this, R.drawable.incognito_mode, true))
             } else {
                 arrowImageView?.setImageBitmap(DrawableUtils.getRoundedNumberImage(number, Utils.dpToPx(24f),
-                        Utils.dpToPx(24f), ThemeUtils.getIconThemeColor(this, isDarkTheme), Utils.dpToPx(2.5f)))
+                    Utils.dpToPx(24f), ThemeUtils.getIconThemeColor(this, isDarkTheme), Utils.dpToPx(2.5f)))
             }
         }
     }
@@ -1412,9 +1400,9 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             return
         }
 
-        historyModel.visitHistoryItem(url, title)
-                .subscribeOn(databaseScheduler)
-                .subscribe()
+        historyModel.visitHistoryEntry(url, title)
+            .subscribeOn(databaseScheduler)
+            .subscribe()
     }
 
     /**
@@ -1445,9 +1433,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             }
             getUrl.setText(url)
             searchTheWeb(url)
-            with(getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager) {
-                hideSoftInputFromWindow(getUrl.windowToken, 0)
-            }
+            inputMethodManager.hideSoftInputFromWindow(getUrl.windowToken, 0)
             presenter?.onAutoCompleteItemPressed()
         }
 
@@ -1459,33 +1445,17 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
      * function that opens the HTML history page in the browser
      */
     private fun openHistory() {
-        HistoryPage()
-                .createHistoryPage()
-                .subscribeOn(databaseScheduler)
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe { item ->
-                    tabsManager
-                            .allTabs
-                            .map(LightningView::url)
-                            .withIndex()
-                            .find { UrlUtils.isHistoryUrl(it.value) }
-                            ?.let {
-                                presenter?.tabChanged(it.index)
-                                return@subscribe
-                            }
-
-                    newTab(requireNotNull(item), true)
-                }
+        presenter?.newTab(
+            historyPageInitializer,
+            true
+        )
     }
 
     private fun openDownloads() {
-        DownloadsPage()
-                .getDownloadsPage()
-                .subscribeOn(databaseScheduler)
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe { url ->
-                    tabsManager.currentTab?.loadUrl(url)
-                }
+        presenter?.newTab(
+            downloadPageInitializer,
+            true
+        )
     }
 
     /**
@@ -1566,14 +1536,14 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         startActivityForResult(Intent.createChooser(Intent(Intent.ACTION_GET_CONTENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
-        }, getString(R.string.title_file_chooser)), 1)
+        }, getString(R.string.title_file_chooser)), FILE_CHOOSER_REQUEST_CODE)
     }
 
     /**
      * used to allow uploading into the browser
      */
     override fun onActivityResult(requestCode: Int, resultCode: Int, intent: Intent?) {
-        if (API < Build.VERSION_CODES.LOLLIPOP) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
             if (requestCode == 1) {
                 val result = if (intent == null || resultCode != Activity.RESULT_OK) null else intent.data
                 uploadMessageCallback?.onReceiveValue(result)
@@ -1582,59 +1552,44 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             }
         }
 
-        if (requestCode != 1 || filePathCallback == null) {
-            super.onActivityResult(requestCode, resultCode, intent)
-            return
-        }
-
-        var results: Array<Uri>? = null
-
-        // Check that the response is a good one
-        if (resultCode == Activity.RESULT_OK) {
-            if (intent == null) {
-                // If there is not data, then we may have taken a photo
-                if (cameraPhotoPath != null) {
-                    results = arrayOf(Uri.parse(cameraPhotoPath))
+        if (requestCode == FILE_CHOOSER_REQUEST_CODE) {
+            val results: Array<Uri>? = if (resultCode == Activity.RESULT_OK) {
+                if (intent == null) {
+                    // If there is not data, then we may have taken a photo
+                    cameraPhotoPath?.let { arrayOf(it.toUri()) }
+                } else {
+                    intent.dataString?.let { arrayOf(it.toUri()) }
                 }
             } else {
-                val dataString = intent.dataString
-                if (dataString != null) {
-                    results = arrayOf(Uri.parse(dataString))
-                }
+                null
             }
-        }
 
-        filePathCallback?.onReceiveValue(results)
-        filePathCallback = null
+            filePathCallback?.onReceiveValue(results)
+            filePathCallback = null
+        } else {
+            super.onActivityResult(requestCode, resultCode, intent)
+        }
     }
 
     override fun showFileChooser(filePathCallback: ValueCallback<Array<Uri>>) {
         this.filePathCallback?.onReceiveValue(null)
         this.filePathCallback = filePathCallback
 
-        var takePictureIntent: Intent? = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
         // Create the File where the photo should go
-        var photoFile: File? = null
-        try {
-            photoFile = Utils.createImageFile()
-            takePictureIntent?.putExtra("PhotoPath", cameraPhotoPath)
+        val intentArray: Array<Intent> = try {
+            arrayOf(Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                putExtra("PhotoPath", cameraPhotoPath)
+                putExtra(
+                    MediaStore.EXTRA_OUTPUT,
+                    Uri.fromFile(Utils.createImageFile().also { file ->
+                        cameraPhotoPath = "file:${file.absolutePath}"
+                    })
+                )
+            })
         } catch (ex: IOException) {
             // Error occurred while creating the File
             Log.e(TAG, "Unable to create Image File", ex)
-        }
-
-        // Continue only if the File was successfully created
-        if (photoFile != null) {
-            cameraPhotoPath = "file:" + photoFile.absolutePath
-            takePictureIntent?.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(photoFile))
-        } else {
-            takePictureIntent = null
-        }
-
-        val intentArray = if (takePictureIntent != null) {
-            arrayOf(takePictureIntent)
-        } else {
-            arrayOf()
+            emptyArray()
         }
 
         startActivityForResult(Intent(Intent.ACTION_CHOOSER).apply {
@@ -1644,7 +1599,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             })
             putExtra(Intent.EXTRA_TITLE, "Image Chooser")
             putExtra(Intent.EXTRA_INITIAL_INTENTS, intentArray)
-        }, 1)
+        }, FILE_CHOOSER_REQUEST_CODE)
     }
 
     override fun onShowCustomView(view: View, callback: CustomViewCallback) {
@@ -1764,14 +1719,16 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     override fun onBackButtonPressed() {
-        if (!drawer_layout.closeDrawerIfOpen(left_drawer) && !drawer_layout.closeDrawerIfOpen(right_drawer)) {
+        if (drawer_layout.closeDrawerIfOpen(getTabDrawer())) {
             val currentTab = tabsManager.currentTab
             if (currentTab?.canGoBack() == true) {
                 currentTab.goBack()
-                closeDrawers(null)
             } else if (currentTab != null) {
                 tabsManager.let { presenter?.deleteTab(it.positionOf(currentTab)) }
             }
+        } else if (drawer_layout.closeDrawerIfOpen(getBookmarkDrawer())) {
+            // Don't do anything other than close the bookmarks drawer when the activity is being
+            // delegated to.
         }
     }
 
@@ -1807,16 +1764,16 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         if (enabled) {
             if (immersive) {
                 decor.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_FULLSCREEN
-                        or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
             } else {
                 decor.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
             }
             window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
-                    WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                WindowManager.LayoutParams.FLAG_FULLSCREEN)
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
             decor.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
@@ -1832,15 +1789,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
      * the newly created WebView.
      */
     override fun onCreateWindow(resultMsg: Message) {
-        if (newTab("", true)) {
-            tabsManager.getTabAtPosition(tabsManager.size() - 1)
-                    ?.let(LightningView::webView)
-                    ?.let {
-                        val transport = resultMsg.obj as WebView.WebViewTransport
-                        transport.webView = it
-                        resultMsg.sendToTarget()
-                    }
-        }
+        presenter?.newTab(ResultMessageInitializer(resultMsg), true)
     }
 
     /**
@@ -1934,18 +1883,19 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         }
     }
 
-    override fun handleBookmarkDeleted(item: HistoryItem) {
-        bookmarksView?.handleBookmarkDeleted(item)
+    override fun handleBookmarkDeleted(bookmark: Bookmark) {
+        bookmarksView?.handleBookmarkDeleted(bookmark)
         handleBookmarksChange()
     }
 
     override fun handleNewTab(newTabType: LightningDialogBuilder.NewTab, url: String) {
+        val urlInitializer = UrlInitializer(url)
         when (newTabType) {
-            LightningDialogBuilder.NewTab.FOREGROUND -> newTab(url, true)
-            LightningDialogBuilder.NewTab.BACKGROUND -> newTab(url, false)
+            LightningDialogBuilder.NewTab.FOREGROUND -> presenter?.newTab(urlInitializer, true)
+            LightningDialogBuilder.NewTab.BACKGROUND -> presenter?.newTab(urlInitializer, false)
             LightningDialogBuilder.NewTab.INCOGNITO -> {
                 drawer_layout.closeDrawers()
-                val intent = IncognitoActivity.createIntent(this).apply { data = Uri.parse(url) }
+                val intent = IncognitoActivity.createIntent(this, url.toUri())
                 startActivity(intent)
                 overridePendingTransition(R.anim.slide_up_in, R.anim.fade_out_scale)
             }
@@ -2032,12 +1982,12 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
      * If the [drawer] is open, close it and return true. Return false otherwise.
      */
     private fun DrawerLayout.closeDrawerIfOpen(drawer: View): Boolean =
-            if (isDrawerOpen(drawer)) {
-                closeDrawer(drawer)
-                true
-            } else {
-                false
-            }
+        if (isDrawerOpen(drawer)) {
+            closeDrawer(drawer)
+            true
+        } else {
+            false
+        }
 
     companion object {
 
@@ -2048,8 +1998,9 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         private const val TAG_BOOKMARK_FRAGMENT = "TAG_BOOKMARK_FRAGMENT"
         private const val TAG_TABS_FRAGMENT = "TAG_TABS_FRAGMENT"
 
+        private const val FILE_CHOOSER_REQUEST_CODE = 1111
+
         // Constant
-        private val API = android.os.Build.VERSION.SDK_INT
         private val MATCH_PARENT = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         private val COVER_SCREEN_PARAMS = FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
 

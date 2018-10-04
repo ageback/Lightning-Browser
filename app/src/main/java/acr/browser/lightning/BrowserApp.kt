@@ -2,18 +2,12 @@ package acr.browser.lightning
 
 import acr.browser.lightning.database.bookmark.BookmarkExporter
 import acr.browser.lightning.database.bookmark.BookmarkRepository
-import acr.browser.lightning.di.AppComponent
-import acr.browser.lightning.di.AppModule
-import acr.browser.lightning.di.DaggerAppComponent
-import acr.browser.lightning.di.DatabaseScheduler
+import acr.browser.lightning.di.*
 import acr.browser.lightning.preference.DeveloperPreferences
 import acr.browser.lightning.utils.FileUtils
 import acr.browser.lightning.utils.MemoryLeakUtils
 import android.app.Activity
 import android.app.Application
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.os.Build
 import android.os.StrictMode
 import android.support.v7.app.AppCompatDelegate
@@ -31,17 +25,19 @@ class BrowserApp : Application() {
     @Inject internal lateinit var bookmarkModel: BookmarkRepository
     @Inject @field:DatabaseScheduler internal lateinit var databaseScheduler: Scheduler
 
+    val applicationComponent: AppComponent by lazy { appComponent }
+
     override fun onCreate() {
         super.onCreate()
         if (BuildConfig.DEBUG) {
             StrictMode.setThreadPolicy(StrictMode.ThreadPolicy.Builder()
-                    .detectAll()
-                    .penaltyLog()
-                    .build())
+                .detectAll()
+                .penaltyLog()
+                .build())
             StrictMode.setVmPolicy(StrictMode.VmPolicy.Builder()
-                    .detectAll()
-                    .penaltyLog()
-                    .build())
+                .detectAll()
+                .penaltyLog()
+                .build())
         }
 
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -66,16 +62,16 @@ class BrowserApp : Application() {
         }
 
         appComponent = DaggerAppComponent.builder().appModule(AppModule(this)).build()
-        appComponent.inject(this)
+        injector.inject(this)
 
         Single.fromCallable(bookmarkModel::count)
-                .filter { it == 0L }
-                .flatMapCompletable {
-                    val assetsBookmarks = BookmarkExporter.importBookmarksFromAssets(this@BrowserApp)
-                    bookmarkModel.addBookmarkList(assetsBookmarks)
-                }
-                .subscribeOn(databaseScheduler)
-                .subscribe()
+            .filter { it == 0L }
+            .flatMapCompletable {
+                val assetsBookmarks = BookmarkExporter.importBookmarksFromAssets(this@BrowserApp)
+                bookmarkModel.addBookmarkList(assetsBookmarks)
+            }
+            .subscribeOn(databaseScheduler)
+            .subscribe()
 
         if (developerPreferences.useLeakCanary && !isRelease) {
             LeakCanary.install(this)
@@ -112,12 +108,6 @@ class BrowserApp : Application() {
         val isRelease: Boolean
             get() = !BuildConfig.DEBUG || BuildConfig.BUILD_TYPE.toLowerCase() == "release"
 
-        @JvmStatic
-        fun copyToClipboard(context: Context, string: String) {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clip = ClipData.newPlainText("URL", string)
-            clipboard.primaryClip = clip
-        }
     }
 
 }

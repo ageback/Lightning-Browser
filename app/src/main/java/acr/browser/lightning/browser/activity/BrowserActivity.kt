@@ -4,7 +4,6 @@
 
 package acr.browser.lightning.browser.activity
 
-import acr.browser.lightning.BrowserApp
 import acr.browser.lightning.IncognitoActivity
 import acr.browser.lightning.R
 import acr.browser.lightning.browser.*
@@ -18,6 +17,7 @@ import acr.browser.lightning.database.bookmark.BookmarkRepository
 import acr.browser.lightning.database.history.HistoryRepository
 import acr.browser.lightning.di.DatabaseScheduler
 import acr.browser.lightning.di.MainScheduler
+import acr.browser.lightning.di.injector
 import acr.browser.lightning.dialog.BrowserDialog
 import acr.browser.lightning.dialog.DialogItem
 import acr.browser.lightning.dialog.LightningDialogBuilder
@@ -211,7 +211,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        BrowserApp.appComponent.inject(this)
+        injector.inject(this)
         setContentView(R.layout.activity_main)
         ButterKnife.bind(this)
 
@@ -1318,7 +1318,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         }
         Palette.from(favicon).generate { palette ->
             // OR with opaque black to remove transparency glitches
-            val color = Color.BLACK or palette.getVibrantColor(defaultColor)
+            val color = Color.BLACK or (palette?.getVibrantColor(defaultColor) ?: defaultColor)
 
             // Lighten up the dark color if it is too dark
             val finalColor = if (!shouldShowTabsInDrawer || Utils.isColorTooDark(color)) {

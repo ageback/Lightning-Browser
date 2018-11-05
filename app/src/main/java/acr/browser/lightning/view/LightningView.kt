@@ -13,11 +13,13 @@ import acr.browser.lightning.di.injector
 import acr.browser.lightning.dialog.LightningDialogBuilder
 import acr.browser.lightning.download.LightningDownloadListener
 import acr.browser.lightning.log.Logger
+import acr.browser.lightning.network.NetworkConnectivityModel
 import acr.browser.lightning.preference.UserPreferences
 import acr.browser.lightning.ssl.SSLState
 import acr.browser.lightning.utils.ProxyUtils
 import acr.browser.lightning.utils.UrlUtils
 import acr.browser.lightning.utils.Utils
+import acr.browser.lightning.view.find.FindResults
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.graphics.*
@@ -25,7 +27,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Message
-import android.util.Log
 import android.view.*
 import android.view.GestureDetector.SimpleOnGestureListener
 import android.view.View.OnTouchListener
@@ -37,6 +38,7 @@ import androidx.collection.ArrayMap
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.Single
+import io.reactivex.disposables.Disposable
 import java.lang.ref.WeakReference
 import javax.inject.Inject
 
@@ -114,8 +116,11 @@ class LightningView(
     @Inject internal lateinit var proxyUtils: ProxyUtils
     @Inject @field:DatabaseScheduler internal lateinit var databaseScheduler: Scheduler
     @Inject @field:MainScheduler internal lateinit var mainScheduler: Scheduler
+    @Inject lateinit var networkConnectivityModel: NetworkConnectivityModel
 
     private val lightningWebClient: LightningWebClient
+
+    private val networkDisposable: Disposable
 
     /**
      * This method determines whether the current tab is visible or not.
@@ -206,6 +211,10 @@ class LightningView(
         initializePreferences()
 
         tabInitializer.initialize(tab, requestHeaders)
+
+        networkDisposable = networkConnectivityModel.connectivity()
+            .observeOn(mainScheduler)
+            .subscribe(::setNetworkAvailable)
     }
 
     fun currentSslState(): SSLState = lightningWebClient.sslState
@@ -290,7 +299,7 @@ class LightningView(
             } catch (e: Exception) {
                 // This shouldn't be necessary, but there are a number
                 // of KitKat devices that crash trying to set this
-                Log.e(TAG, "Problem setting LayoutAlgorithm to TEXT_AUTOSIZING")
+                logger.log(TAG, "Problem setting LayoutAlgorithm to TEXT_AUTOSIZING")
             }
         } else {
             settings.layoutAlgorithm = LayoutAlgorithm.NORMAL
@@ -604,8 +613,22 @@ class LightningView(
      * @param text the text to search for.
      */
     @SuppressLint("NewApi")
-    fun find(text: String) {
+    fun find(text: String): FindResults {
         webView?.findAllAsync(text)
+
+        return object : FindResults {
+            override fun nextResult() {
+                webView?.findNext(true)
+            }
+
+            override fun previousResult() {
+                webView?.findNext(false)
+            }
+
+            override fun clearResults() {
+                webView?.clearMatches()
+            }
+        }
     }
 
     /**
@@ -620,12 +643,13 @@ class LightningView(
     // is removed and would cause a memory leak if the parent check
     // was not in place.
     fun onDestroy() {
+        networkDisposable.dispose()
         webView?.let { tab ->
             // Check to make sure the WebView has been removed
             // before calling destroy() so that a memory leak is not created
             val parent = tab.parent as? ViewGroup
             if (parent != null) {
-                Log.e(TAG, "WebView was not detached from window before onDestroy")
+                logger.log(TAG, "WebView was not detached from window before onDestroy")
                 parent.removeView(webView)
             }
             tab.stopLoading()
@@ -657,38 +681,9 @@ class LightningView(
     }
 
     /**
-     * Move the highlighted text in the WebView
-     * to the next matched text. This method will
-     * only have an affect after [LightningView.find]
-     * is called. Otherwise it will do nothing.
-     */
-    fun findNext() {
-        webView?.findNext(true)
-    }
-
-    /**
-     * Move the highlighted text in the WebView
-     * to the previous matched text. This method will
-     * only have an affect after [LightningView.find]
-     * is called. Otherwise it will do nothing.
-     */
-    fun findPrevious() {
-        webView?.findNext(false)
-    }
-
-    /**
-     * Clear the highlighted text in the WebView after
-     * [LightningView.find] has been called.
-     * Otherwise it will have no affect.
-     */
-    fun clearFindMatches() {
-        webView?.clearMatches()
-    }
-
-    /**
      * Notifies the [WebView] whether the network is available or not.
      */
-    fun setNetworkAvailable(isAvailable: Boolean) {
+    private fun setNetworkAvailable(isAvailable: Boolean) {
         webView?.setNetworkAvailable(isAvailable)
     }
 

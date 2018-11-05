@@ -28,7 +28,6 @@ import acr.browser.lightning.html.history.HistoryPageFactory
 import acr.browser.lightning.html.homepage.HomePageFactory
 import acr.browser.lightning.interpolator.BezierDecelerateInterpolator
 import acr.browser.lightning.log.Logger
-import acr.browser.lightning.network.NetworkConnectivityModel
 import acr.browser.lightning.notifications.IncognitoNotification
 import acr.browser.lightning.reading.activity.ReadingActivity
 import acr.browser.lightning.search.SearchEngineProvider
@@ -38,6 +37,7 @@ import acr.browser.lightning.ssl.SSLState
 import acr.browser.lightning.utils.*
 import acr.browser.lightning.view.*
 import acr.browser.lightning.view.SearchView
+import acr.browser.lightning.view.find.FindResults
 import android.app.Activity
 import android.app.NotificationManager
 import android.content.ClipData
@@ -61,7 +61,6 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.text.style.CharacterStyle
 import android.text.style.ParagraphStyle
-import android.util.Log
 import android.view.*
 import android.view.View.*
 import android.view.ViewGroup.LayoutParams
@@ -87,7 +86,6 @@ import butterknife.ButterKnife
 import com.anthonycr.grant.PermissionsManager
 import io.reactivex.Completable
 import io.reactivex.Scheduler
-import io.reactivex.disposables.Disposable
 import io.reactivex.rxkotlin.subscribeBy
 import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.activity_main.*
@@ -137,12 +135,13 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     private var searchText: String? = null
     private var cameraPhotoPath: String? = null
 
+    private var findResult: FindResults? = null
+
     // The singleton BookmarkManager
     @Inject lateinit var bookmarkManager: BookmarkRepository
     @Inject lateinit var historyModel: HistoryRepository
     @Inject lateinit var searchBoxModel: SearchBoxModel
     @Inject lateinit var searchEngineProvider: SearchEngineProvider
-    @Inject lateinit var networkConnectivityModel: NetworkConnectivityModel
     @Inject lateinit var inputMethodManager: InputMethodManager
     @Inject lateinit var clipboardManager: ClipboardManager
     @Inject lateinit var notificationManager: NotificationManager
@@ -158,9 +157,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     @Inject @field:MainHandler lateinit var mainHandler: Handler
     @Inject lateinit var proxyUtils: ProxyUtils
     @Inject lateinit var logger: Logger
-
-    // Subscriptions
-    private var networkDisposable: Disposable? = null
 
     // Image
     private var webPageBitmap: Bitmap? = null
@@ -912,7 +908,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         R.string.search_hint
     ) { text ->
         if (text.isNotEmpty()) {
-            presenter?.findInPage(text)
+            findResult = presenter?.findInPage(text)
             showFindInPageControls(text)
         }
     }
@@ -1213,7 +1209,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                     }
                 }
             } else {
-                Log.e(TAG, "This shouldn't happen ever")
+                logger.log(TAG, "This shouldn't happen ever")
                 super.onBackPressed()
             }
         }
@@ -1223,8 +1219,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         super.onPause()
         logger.log(TAG, "onPause")
         tabsManager.pauseAll()
-
-        networkDisposable?.dispose()
 
         if (isIncognito() && isFinishing) {
             overridePendingTransition(R.anim.fade_in_scale, R.anim.slide_down_out)
@@ -1275,14 +1269,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         }
         tabsManager.resumeAll()
         initializePreferences()
-
-        networkDisposable = networkConnectivityModel
-            .connectivity()
-            .subscribeOn(mainScheduler)
-            .subscribe { connected ->
-                logger.log(TAG, "Network connected: $connected")
-                tabsManager.notifyConnectionStatus(connected)
-            }
 
         if (isFullScreen) {
             overlayToolbarOnWebView()
@@ -1594,7 +1580,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             })
         } catch (ex: IOException) {
             // Error occurred while creating the File
-            Log.e(TAG, "Unable to create Image File", ex)
+            logger.log(TAG, "Unable to create Image File", ex)
             emptyArray()
         }
 
@@ -1620,7 +1606,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             try {
                 callback.onCustomViewHidden()
             } catch (e: Exception) {
-                Log.e(TAG, "Error hiding custom view", e)
+                logger.log(TAG, "Error hiding custom view", e)
             }
 
             return
@@ -1629,7 +1615,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         try {
             view.keepScreenOn = true
         } catch (e: SecurityException) {
-            Log.e(TAG, "WebView is not allowed to keep the screen on")
+            logger.log(TAG, "WebView is not allowed to keep the screen on")
         }
 
         originalOrientation = getRequestedOrientation()
@@ -1667,7 +1653,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 try {
                     customViewCallback?.onCustomViewHidden()
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error hiding custom view", e)
+                    logger.log(TAG, "Error hiding custom view", e)
                 }
 
                 customViewCallback = null
@@ -1679,7 +1665,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         try {
             customView?.keepScreenOn = false
         } catch (e: SecurityException) {
-            Log.e(TAG, "WebView is not allowed to keep the screen on")
+            logger.log(TAG, "WebView is not allowed to keep the screen on")
         }
 
         setFullscreen(userPreferences.hideStatusBarEnabled, false)
@@ -1701,7 +1687,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         try {
             customViewCallback?.onCustomViewHidden()
         } catch (e: Exception) {
-            Log.e(TAG, "Error hiding custom view", e)
+            logger.log(TAG, "Error hiding custom view", e)
         }
 
         customViewCallback = null
@@ -1951,10 +1937,11 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 shouldShowTabsInDrawer -> drawer_layout.openDrawer(getTabDrawer())
                 else -> currentTab.loadHomePage()
             }
-            R.id.button_next -> currentTab.findNext()
-            R.id.button_back -> currentTab.findPrevious()
+            R.id.button_next -> findResult?.nextResult()
+            R.id.button_back -> findResult?.previousResult()
             R.id.button_quit -> {
-                currentTab.clearFindMatches()
+                findResult?.clearResults()
+                findResult = null
                 search_bar.visibility = View.GONE
             }
             R.id.action_reading -> {

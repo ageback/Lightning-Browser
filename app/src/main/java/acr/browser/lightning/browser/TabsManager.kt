@@ -15,7 +15,6 @@ import android.app.Application
 import android.app.SearchManager
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import android.webkit.URLUtil
 import io.reactivex.Maybe
 import io.reactivex.Observable
@@ -215,15 +214,6 @@ class TabsManager @Inject constructor(
     }
 
     /**
-     * Forwards network connection status to the WebViews.
-     *
-     * @param isConnected whether there is a network connection or not.
-     */
-    fun notifyConnectionStatus(isConnected: Boolean) = tabList.forEach {
-        it.setNetworkAvailable(isConnected)
-    }
-
-    /**
      * The current number of tabs in the manager.
      *
      * @return the number of tabs in the list.
@@ -399,7 +389,7 @@ class TabsManager @Inject constructor(
     fun switchToTab(position: Int): LightningView? {
         logger.log(TAG, "switch to tab: $position")
         return if (position < 0 || position >= tabList.size) {
-            Log.e(TAG, "Returning a null LightningView requested for position: $position")
+            logger.log(TAG, "Returning a null LightningView requested for position: $position")
             null
         } else {
             tabList[position].also {

@@ -929,10 +929,10 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             return
         }
         BrowserDialog.show(this, R.string.dialog_title_close_browser,
-            DialogItem(R.string.close_tab) {
+            DialogItem(title = R.string.close_tab) {
                 presenter?.deleteTab(position)
             },
-            DialogItem(R.string.close_other_tabs) {
+            DialogItem(title = R.string.close_other_tabs) {
                 presenter?.closeAllOtherTabs()
             },
             DialogItem(title = R.string.close_all_tabs, onClick = this::closeBrowser))
@@ -1943,16 +1943,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 findResult?.clearResults()
                 findResult = null
                 search_bar.visibility = View.GONE
-            }
-            R.id.action_reading -> {
-                val read = Intent(this, ReadingActivity::class.java)
-                read.putExtra(LOAD_READING_URL, currentTab.url)
-                startActivity(read)
-            }
-            R.id.action_toggle_desktop -> {
-                currentTab.toggleDesktopUA()
-                currentTab.reload()
-                closeDrawers(null)
             }
         }
     }

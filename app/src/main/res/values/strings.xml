@@ -327,4 +327,6 @@
 
     <!--Ad block -->
     <string name="ad_block_load_failure">Failed to load hosts from ad blocking source.</string>
+    <string name="action_other_browser">Ohter browser</string>
+    <string name="action_exit">Exit</string>
 </resources>

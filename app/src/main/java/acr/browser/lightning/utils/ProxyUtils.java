@@ -7,30 +7,31 @@ import android.support.annotation.NonNull;
 import android.support.v7.app.AlertDialog;
 import android.util.Log;
 
-import com.squareup.otto.Bus;
-
 import net.i2p.android.ui.I2PAndroidHelper;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
+import acr.browser.lightning.BrowserApp;
 import acr.browser.lightning.R;
-import acr.browser.lightning.app.BrowserApp;
 import acr.browser.lightning.constant.Constants;
+import acr.browser.lightning.constant.Proxy;
 import acr.browser.lightning.dialog.BrowserDialog;
 import acr.browser.lightning.preference.PreferenceManager;
 import info.guardianproject.netcipher.proxy.OrbotHelper;
 import info.guardianproject.netcipher.webkit.WebkitProxy;
 
 @Singleton
-public class ProxyUtils {
+public final class ProxyUtils {
+
+    private static final String TAG = "ProxyUtils";
+
     // Helper
-    private static boolean mI2PHelperBound;
-    private static boolean mI2PProxyInitialized;
+    private static boolean sI2PHelperBound;
+    private static boolean sI2PProxyInitialized;
 
     @Inject PreferenceManager mPreferences;
     @Inject I2PAndroidHelper mI2PHelper;
-    @Inject Bus mBus;
 
     @Inject
     public ProxyUtils() {
@@ -114,14 +115,15 @@ public class ProxyUtils {
                 // We shouldn't be here
                 return;
             case Constants.PROXY_ORBOT:
-                if (!OrbotHelper.isOrbotRunning(activity))
+                if (!OrbotHelper.isOrbotRunning(activity)) {
                     OrbotHelper.requestStartTor(activity);
+                }
                 host = "localhost";
                 port = 8118;
                 break;
             case Constants.PROXY_I2P:
-                mI2PProxyInitialized = true;
-                if (mI2PHelperBound && !mI2PHelper.isI2PAndroidRunning()) {
+                sI2PProxyInitialized = true;
+                if (sI2PHelperBound && !mI2PHelper.isI2PAndroidRunning()) {
                     mI2PHelper.requestI2PAndroidStart(activity);
                 }
                 host = "localhost";
@@ -140,7 +142,7 @@ public class ProxyUtils {
         try {
             WebkitProxy.setProxy(BrowserApp.class.getName(), activity.getApplicationContext(), null, host, port);
         } catch (Exception e) {
-            Log.d(Constants.TAG, "error enabling web proxying", e);
+            Log.d(TAG, "error enabling web proxying", e);
         }
 
     }
@@ -169,13 +171,13 @@ public class ProxyUtils {
                 e.printStackTrace();
             }
 
-            mI2PProxyInitialized = false;
+            sI2PProxyInitialized = false;
         }
     }
 
     public void onStop() {
         mI2PHelper.unbind();
-        mI2PHelperBound = false;
+        sI2PHelperBound = false;
     }
 
     public void onStart(final Activity activity) {
@@ -184,15 +186,15 @@ public class ProxyUtils {
             mI2PHelper.bind(new I2PAndroidHelper.Callback() {
                 @Override
                 public void onI2PAndroidBound() {
-                    mI2PHelperBound = true;
-                    if (mI2PProxyInitialized && !mI2PHelper.isI2PAndroidRunning())
+                    sI2PHelperBound = true;
+                    if (sI2PProxyInitialized && !mI2PHelper.isI2PAndroidRunning())
                         mI2PHelper.requestI2PAndroidStart(activity);
                 }
             });
         }
     }
 
-    @Constants.PROXY
+    @Proxy
     public static int setProxyChoice(int choice, @NonNull Activity activity) {
         switch (choice) {
             case Constants.PROXY_ORBOT:
@@ -201,9 +203,8 @@ public class ProxyUtils {
                     Utils.showSnackbar(activity, R.string.install_orbot);
                 }
                 break;
-
             case Constants.PROXY_I2P:
-                I2PAndroidHelper ih = new I2PAndroidHelper(BrowserApp.get(activity));
+                I2PAndroidHelper ih = new I2PAndroidHelper(activity.getApplication());
                 if (!ih.isI2PAndroidInstalled()) {
                     choice = Constants.NO_PROXY;
                     ih.promptToInstall(activity);

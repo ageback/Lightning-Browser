@@ -25,7 +25,6 @@
     <string name="block">Blokuj obrazki</string>
     <string name="window">Zezwalaj stronom na otwieranie nowych okien</string>
     <string name="cookies">Włącz ciasteczka</string>
-    <string name="importbookmarks">Importuj zakładki</string>
     <string name="size">Rozmiar tekstu</string>
     <string name="recommended">Zalecane</string>
     <string name="search">Wyszukiwarka</string>
@@ -53,7 +52,7 @@
     <string name="agent_custom">Własny identyfikator</string>
     <string name="title_search_engine">Wyszukiwarka</string>
     <string name="action_ok">OK</string>
-    <string name="dialog_download">Czy chcesz pobrać ten plik?</string>
+    <string name="dialog_download">Czy chcesz pobrać ten plik? (%1$s)</string>
     <string name="action_cancel">Anuluj</string>
     <string name="title_warning">Ostrzeżenie</string>
     <string name="dialog_adobe_not_installed">Adobe Flash Player nie został wykryty.\nProszę go zainstalować.</string>
@@ -105,7 +104,7 @@
     <string name="max_tabs">Maksymalna liczba otwartych kart osiągnięta</string>
     <string name="message_text_copied">Tekst został skopiowany do schowka</string>
     <string name="message_link_copied">Link został skopiowany do schowka</string>
-    <string name="custom_url">Własny URL</string>
+    <string name="search_engine_custom">Własny URL</string>
     <string name="message_blocked_local">Wczytywanie lokalnego pliku zostało zablokowane</string>
     <string name="licenses">Licencje Open Source</string>
     <string name="suggestion">Wyszukaj</string>

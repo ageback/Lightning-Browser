@@ -11,32 +11,18 @@ import acr.browser.lightning.utils.Preconditions;
 
 public class HistoryItem implements Comparable<HistoryItem> {
 
-    // private variables
-    @NonNull
-    private String mUrl = "";
-
-    @NonNull
-    private String mTitle = "";
-
-    @NonNull
-    private String mFolder = "";
-
-    @Nullable
-    private Bitmap mBitmap = null;
+    @NonNull private String mUrl = "";
+    @NonNull private String mTitle = "";
+    @NonNull private String mFolder = "";
+    @Nullable private Bitmap mBitmap = null;
 
     private int mImageId = 0;
-    private int mOrder = 0;
+
+    private int mPosition = 0;
+
     private boolean mIsFolder = false;
 
     public HistoryItem() {}
-
-    public HistoryItem(@NonNull HistoryItem item) {
-        this.mUrl = item.mUrl;
-        this.mTitle = item.mTitle;
-        this.mFolder = item.mFolder;
-        this.mOrder = item.mOrder;
-        this.mIsFolder = item.mIsFolder;
-    }
 
     public HistoryItem(@NonNull String url, @NonNull String title) {
         Preconditions.checkNonNull(url);
@@ -63,7 +49,7 @@ public class HistoryItem implements Comparable<HistoryItem> {
         this.mImageId = id;
     }
 
-    public void setBitmap(Bitmap image) {
+    public void setBitmap(@Nullable Bitmap image) {
         mBitmap = image;
     }
 
@@ -71,12 +57,12 @@ public class HistoryItem implements Comparable<HistoryItem> {
         mFolder = (folder == null) ? "" : folder;
     }
 
-    public void setOrder(int order) {
-        mOrder = order;
+    public void setPosition(int order) {
+        mPosition = order;
     }
 
-    public int getOrder() {
-        return mOrder;
+    public int getPosition() {
+        return mPosition;
     }
 
     @NonNull
@@ -123,35 +109,44 @@ public class HistoryItem implements Comparable<HistoryItem> {
 
     @Override
     public int compareTo(@NonNull HistoryItem another) {
-        int compare = this.mTitle.compareTo(another.mTitle);
-        if (compare == 0) {
-            return this.mUrl.compareTo(another.mUrl);
+        int folderCompare = Boolean.valueOf(mIsFolder).compareTo(another.mIsFolder);
+
+        if (folderCompare == 0) {
+            int titleCompare = mTitle.compareToIgnoreCase(another.mTitle);
+            if (titleCompare == 0) {
+                return mUrl.compareTo(another.mUrl);
+            }
+
+            return titleCompare;
         }
-        return compare;
+
+        return folderCompare;
     }
 
     @Override
-    public boolean equals(@Nullable Object object) {
+    public boolean equals(@Nullable Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
 
-        if (this == object) return true;
-        if (object == null) return false;
-        if (!(object instanceof HistoryItem)) return false;
-
-        HistoryItem that = (HistoryItem) object;
+        HistoryItem that = (HistoryItem) o;
 
         return mImageId == that.mImageId &&
-                this.mTitle.equals(that.mTitle) && this.mUrl.equals(that.mUrl) &&
-                this.mFolder.equals(that.mFolder);
+            mPosition == that.mPosition &&
+            mIsFolder == that.mIsFolder &&
+            mUrl.equals(that.mUrl) &&
+            mTitle.equals(that.mTitle) &&
+            mFolder.equals(that.mFolder);
+
     }
 
     @Override
     public int hashCode() {
-
         int result = mUrl.hashCode();
-        result = 31 * result + mImageId;
         result = 31 * result + mTitle.hashCode();
-        result = 32 * result + mFolder.hashCode();
+        result = 31 * result + mFolder.hashCode();
         result = 31 * result + mImageId;
+        result = 31 * result + mPosition;
+        result = 31 * result + (mIsFolder ? 1 : 0);
 
         return result;
     }

@@ -8,6 +8,8 @@ import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.util.Log;
 
+import com.anthonycr.bonsai.Schedulers;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -18,14 +20,18 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 
-import acr.browser.lightning.app.BrowserApp;
-import acr.browser.lightning.constant.Constants;
-
 /**
  * A utility class containing helpful methods
  * pertaining to file storage.
  */
-public class FileUtils {
+public final class FileUtils {
+
+    private static final String TAG = "FileUtils";
+
+    public static final String DEFAULT_DOWNLOAD_PATH =
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).getPath();
+
+    private FileUtils() {}
 
     /**
      * Writes a bundle to persistent storage in the files directory
@@ -37,7 +43,7 @@ public class FileUtils {
      * @param name   the name of the file to store the bundle in.
      */
     public static void writeBundleToStorage(final @NonNull Application app, final Bundle bundle, final @NonNull String name) {
-        BrowserApp.getIOThread().execute(new Runnable() {
+        Schedulers.io().execute(new Runnable() {
             @Override
             public void run() {
                 File outputFile = new File(app.getFilesDir(), name);
@@ -51,7 +57,7 @@ public class FileUtils {
                     outputStream.flush();
                     parcel.recycle();
                 } catch (IOException e) {
-                    Log.e(Constants.TAG, "Unable to write bundle to storage");
+                    Log.e(TAG, "Unable to write bundle to storage");
                 } finally {
                     Utils.close(outputStream);
                 }
@@ -103,7 +109,7 @@ public class FileUtils {
             parcel.recycle();
             return out;
         } catch (FileNotFoundException e) {
-            Log.e(Constants.TAG, "Unable to read bundle from storage");
+            Log.e(TAG, "Unable to read bundle from storage");
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
@@ -131,14 +137,15 @@ public class FileUtils {
             throwable.printStackTrace(new PrintStream(outputStream));
             outputStream.flush();
         } catch (IOException e) {
-            Log.e(Constants.TAG, "Unable to write bundle to storage");
+            Log.e(TAG, "Unable to write bundle to storage");
         } finally {
             Utils.close(outputStream);
         }
     }
 
     @NonNull
-    public static String readStringFromFile(@NonNull InputStream inputStream, @NonNull String encoding) throws IOException {
+    public static String readStringFromStream(@NonNull InputStream inputStream,
+                                              @NonNull String encoding) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, encoding));
         StringBuilder result = new StringBuilder();
         String line;
@@ -148,4 +155,97 @@ public class FileUtils {
         return result.toString();
     }
 
+    /**
+     * Converts megabytes to bytes.
+     *
+     * @param megaBytes the number of megabytes.
+     * @return the converted bytes.
+     */
+    public static long megabytesToBytes(long megaBytes) {
+        return megaBytes * 1024 * 1024;
+    }
+
+    /**
+     * Determine whether there is write access in the given directory. Returns false if a
+     * file cannot be created in the directory or if the directory does not exist.
+     *
+     * @param directory the directory to check for write access
+     * @return returns true if the directory can be written to or is in a directory that can
+     * be written to. false if there is no write access.
+     */
+    public static boolean isWriteAccessAvailable(@Nullable String directory) {
+        if (directory == null || directory.isEmpty()) {
+            return false;
+        }
+
+        final String sFileName = "test";
+        final String sFileExtension = ".txt";
+        String dir = addNecessarySlashes(directory);
+        dir = getFirstRealParentDirectory(dir);
+        File file = new File(dir + sFileName + sFileExtension);
+        for (int n = 0; n < 100; n++) {
+            if (!file.exists()) {
+                try {
+                    if (file.createNewFile()) {
+                        //noinspection ResultOfMethodCallIgnored
+                        file.delete();
+                    }
+                    return true;
+                } catch (IOException ignored) {
+                    return false;
+                }
+            } else {
+                file = new File(dir + sFileName + '-' + n + sFileExtension);
+            }
+        }
+        return file.canWrite();
+    }
+
+    /**
+     * Returns the first parent directory of a directory that exists. This is useful
+     * for subdirectories that do not exist but their parents do.
+     *
+     * @param directory the directory to find the first existent parent
+     * @return the first existent parent
+     */
+    @Nullable
+    private static String getFirstRealParentDirectory(@Nullable String directory) {
+        while (true) {
+            if (directory == null || directory.isEmpty()) {
+                return "/";
+            }
+            directory = addNecessarySlashes(directory);
+            File file = new File(directory);
+            if (!file.isDirectory()) {
+                int indexSlash = directory.lastIndexOf('/');
+                if (indexSlash > 0) {
+                    String parent = directory.substring(0, indexSlash);
+                    int previousIndex = parent.lastIndexOf('/');
+                    if (previousIndex > 0) {
+                        directory = parent.substring(0, previousIndex);
+                    } else {
+                        return "/";
+                    }
+                } else {
+                    return "/";
+                }
+            } else {
+                return directory;
+            }
+        }
+    }
+
+    @NonNull
+    public static String addNecessarySlashes(@Nullable String originalPath) {
+        if (originalPath == null || originalPath.length() == 0) {
+            return "/";
+        }
+        if (originalPath.charAt(originalPath.length() - 1) != '/') {
+            originalPath = originalPath + '/';
+        }
+        if (originalPath.charAt(0) != '/') {
+            originalPath = '/' + originalPath;
+        }
+        return originalPath;
+    }
 }

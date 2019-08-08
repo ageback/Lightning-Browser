@@ -3,7 +3,6 @@
  */
 package acr.browser.lightning.utils;
 
-import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
@@ -11,15 +10,18 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ShortcutInfo;
+import android.content.pm.ShortcutManager;
 import android.content.res.Resources;
-import android.database.Cursor;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Shader;
+import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -33,9 +35,7 @@ import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.View;
 import android.webkit.URLUtil;
-
-import com.anthonycr.grant.PermissionsManager;
-import com.anthonycr.grant.PermissionsResultAction;
+import android.widget.Toast;
 
 import java.io.Closeable;
 import java.io.File;
@@ -46,48 +46,16 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 
 import acr.browser.lightning.R;
-import acr.browser.lightning.activity.MainActivity;
 import acr.browser.lightning.constant.Constants;
 import acr.browser.lightning.database.HistoryItem;
 import acr.browser.lightning.dialog.BrowserDialog;
-import acr.browser.lightning.download.DownloadHandler;
-import acr.browser.lightning.preference.PreferenceManager;
 
 public final class Utils {
 
-    private static final String TAG = Utils.class.getSimpleName();
+    private static final String TAG = "Utils";
 
     public static boolean doesSupportHeaders() {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT;
-    }
-
-    /**
-     * Downloads a file from the specified URL. Handles permissions
-     * requests, and creates all the necessary dialogs that must be
-     * showed to the user.
-     *
-     * @param activity           activity needed to created dialogs.
-     * @param url                url to download from.
-     * @param userAgent          the user agent of the browser.
-     * @param contentDisposition the content description of the file.
-     */
-    public static void downloadFile(final Activity activity, final PreferenceManager manager, final String url,
-                                    final String userAgent, final String contentDisposition) {
-        PermissionsManager.getInstance().requestPermissionsIfNecessaryForResult(activity, new String[]{Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE}, new PermissionsResultAction() {
-            @Override
-            public void onGranted() {
-                String fileName = URLUtil.guessFileName(url, null, null);
-                DownloadHandler.onDownloadStart(activity, manager, url, userAgent, contentDisposition, null);
-                Log.i(Constants.TAG, "Downloading: " + fileName);
-            }
-
-            @Override
-            public void onDenied(String permission) {
-                // TODO Show Message
-            }
-        });
-
     }
 
     /**
@@ -175,6 +143,18 @@ public final class Utils {
     }
 
     /**
+     * Shows a toast to the user.
+     * Should only be used if an activity is
+     * not available to show a snackbar.
+     *
+     * @param context  the context needed to show the toast.
+     * @param resource the string shown by the toast to the user.
+     */
+    public static void showToast(@NonNull Context context, @StringRes int resource) {
+        Toast.makeText(context, resource, Toast.LENGTH_SHORT).show();
+    }
+
+    /**
      * Converts Density Pixels (DP) to Pixels (PX).
      *
      * @param dp the number of density pixels to convert.
@@ -197,7 +177,7 @@ public final class Utils {
     public static String getDomainName(@Nullable String url) {
         if (url == null || url.isEmpty()) return "";
 
-        boolean ssl = url.startsWith(Constants.HTTPS);
+        boolean ssl = URLUtil.isHttpsUrl(url);
         int index = url.indexOf('/', 8);
         if (index != -1) {
             url = url.substring(0, index);
@@ -255,6 +235,7 @@ public final class Utils {
      * @param bitmap is the bitmap to pad.
      * @return the padded bitmap.
      */
+    @NonNull
     public static Bitmap padFavicon(@NonNull Bitmap bitmap) {
         int padding = Utils.dpToPx(4);
 
@@ -346,24 +327,6 @@ public final class Utils {
     }
 
     /**
-     * Utility method to close cursors. Cursor did not
-     * implement Closeable until API 16, so using this
-     * method for when we want to close a cursor.
-     *
-     * @param cursor the cursor to close
-     */
-    public static void close(@Nullable Cursor cursor) {
-        if (cursor == null) {
-            return;
-        }
-        try {
-            cursor.close();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    /**
      * Draws the trapezoid background for the horizontal tabs on a canvas object using
      * the specified color.
      *
@@ -416,19 +379,68 @@ public final class Utils {
         if (TextUtils.isEmpty(item.getUrl())) {
             return;
         }
-        Log.d(Constants.TAG, "Creating shortcut: " + item.getTitle() + ' ' + item.getUrl());
-        Intent shortcutIntent = new Intent(activity, MainActivity.class);
+        Log.d(TAG, "Creating shortcut: " + item.getTitle() + ' ' + item.getUrl());
+        Intent shortcutIntent = new Intent(Intent.ACTION_VIEW);
         shortcutIntent.setData(Uri.parse(item.getUrl()));
 
         final String title = TextUtils.isEmpty(item.getTitle()) ? activity.getString(R.string.untitled) : item.getTitle();
 
-        Intent addIntent = new Intent();
-        addIntent.putExtra(Intent.EXTRA_SHORTCUT_INTENT, shortcutIntent);
-        addIntent.putExtra(Intent.EXTRA_SHORTCUT_NAME, title);
-        addIntent.putExtra(Intent.EXTRA_SHORTCUT_ICON, item.getBitmap());
-        addIntent.setAction("com.android.launcher.action.INSTALL_SHORTCUT");
-        activity.sendBroadcast(addIntent);
-        Utils.showSnackbar(activity, R.string.message_added_to_homescreen);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            Intent addIntent = new Intent();
+            addIntent.putExtra(Intent.EXTRA_SHORTCUT_INTENT, shortcutIntent);
+            addIntent.putExtra(Intent.EXTRA_SHORTCUT_NAME, title);
+            addIntent.putExtra(Intent.EXTRA_SHORTCUT_ICON, item.getBitmap());
+            addIntent.setAction("com.android.launcher.action.INSTALL_SHORTCUT");
+            activity.sendBroadcast(addIntent);
+            Utils.showSnackbar(activity, R.string.message_added_to_homescreen);
+        } else {
+            ShortcutManager shortcutManager = activity.getSystemService(ShortcutManager.class);
+            if (shortcutManager.isRequestPinShortcutSupported()) {
+                ShortcutInfo pinShortcutInfo =
+                    new ShortcutInfo.Builder(activity, "browser-shortcut-" + item.getUrl().hashCode())
+                        .setIntent(shortcutIntent)
+                        .setIcon(Icon.createWithBitmap(item.getBitmap()))
+                        .setShortLabel(title)
+                        .build();
+
+                shortcutManager.requestPinShortcut(pinShortcutInfo, null);
+                Utils.showSnackbar(activity, R.string.message_added_to_homescreen);
+            } else {
+                Utils.showSnackbar(activity, R.string.shortcut_message_failed_to_add);
+            }
+        }
+    }
+
+    public static int calculateInSampleSize(@NonNull BitmapFactory.Options options,
+                                            int reqWidth, int reqHeight) {
+        // Raw height and width of image
+        final int height = options.outHeight;
+        final int width = options.outWidth;
+        int inSampleSize = 1;
+
+        if (height > reqHeight || width > reqWidth) {
+
+            final int halfHeight = height / 2;
+            final int halfWidth = width / 2;
+
+            // Calculate the largest inSampleSize value that is a power of 2 and keeps both
+            // height and width larger than the requested height and width.
+            while ((halfHeight / inSampleSize) >= reqHeight
+                && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+
+        return inSampleSize;
+    }
+
+    @Nullable
+    public static String guessFileExtension(@NonNull String filename) {
+        int lastIndex = filename.lastIndexOf('.') + 1;
+        if (lastIndex > 0 && filename.length() > lastIndex) {
+            return filename.substring(lastIndex, filename.length());
+        }
+        return null;
     }
 
 }

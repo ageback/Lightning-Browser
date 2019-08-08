@@ -25,7 +25,6 @@
     <string name="block">이미지 차단</string>
     <string name="window">웹사이트가 새 창을 열도록 허용</string>
     <string name="cookies">쿠키 사용</string>
-    <string name="importbookmarks">브라우저로부터 즐겨찾기 가져오기</string>
     <string name="size">글자 크기</string>
     <string name="recommended">권장합니다</string>
     <string name="search">검색 엔진</string>
@@ -52,7 +51,7 @@
     <string name="agent_custom">임의의 UA</string>
     <string name="title_search_engine">검색 엔진</string>
     <string name="action_ok">확인</string>
-    <string name="dialog_download">파일을 다운로드할까요?</string>
+    <string name="dialog_download">파일을 다운로드할까요? (%1$s)</string>
     <string name="action_cancel">취소</string>
     <string name="title_warning">경고</string>
     <string name="dialog_adobe_not_installed">Adobe Flash Player가 감지되지 않았습니다.\nFlash Player를 설치하세요.</string>
@@ -102,7 +101,7 @@
     <string name="max_tabs">최대 탭 수에 도달했습니다</string>
     <string name="message_text_copied">텍스트가 클립보드로 복사되었습니다</string>
     <string name="message_link_copied">링크가 클립보드로 복사되었습니다</string>
-    <string name="custom_url">임의의 URL</string>
+    <string name="search_engine_custom">임의의 URL</string>
     <string name="message_blocked_local">로컬 파일 불러오기가 차단되었습니다</string>
     <string name="licenses">오픈 소스 라이센스</string>
     <string name="suggestion">다음을 검색</string>

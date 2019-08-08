@@ -2,43 +2,47 @@ package acr.browser.lightning.search.suggestions
 
 import acr.browser.lightning.R
 import acr.browser.lightning.constant.UTF8
-import acr.browser.lightning.database.HistoryItem
-import acr.browser.lightning.utils.FileUtils
+import acr.browser.lightning.database.SearchSuggestion
+import acr.browser.lightning.extensions.map
+import acr.browser.lightning.extensions.preferredLocale
+import acr.browser.lightning.log.Logger
 import android.app.Application
+import io.reactivex.Single
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.ResponseBody
 import org.json.JSONArray
-import java.io.InputStream
 
 /**
  * The search suggestions provider for the Baidu search engine.
  */
 class BaiduSuggestionsModel(
-        application: Application
-) : BaseSuggestionsModel(application, UTF8) {
+    okHttpClient: Single<OkHttpClient>,
+    requestFactory: RequestFactory,
+    application: Application,
+    logger: Logger
+) : BaseSuggestionsModel(okHttpClient, requestFactory, UTF8, application.preferredLocale, logger) {
 
     private val searchSubtitle = application.getString(R.string.suggestion)
     private val inputEncoding = "GBK"
 
-    // see http://unionsug.baidu.com/su?wd=encodeURIComponent(U)
-    // see http://suggestion.baidu.com/s?wd=encodeURIComponent(U)&action=opensearch
-    override fun createQueryUrl(query: String, language: String): String =
-            "http://suggestion.baidu.com/s?wd=$query&action=opensearch"
+    // see http://unionsug.baidu.com/su?wd={encodedQuery}
+    // see http://suggestion.baidu.com/s?wd={encodedQuery}&action=opensearch
+    override fun createQueryUrl(query: String, language: String): HttpUrl = HttpUrl.Builder()
+        .scheme("http")
+        .host("suggestion.baidu.com")
+        .encodedPath("/s")
+        .addEncodedQueryParameter("wd", query)
+        .addQueryParameter("action", "opensearch")
+        .build()
+
 
     @Throws(Exception::class)
-    override fun parseResults(inputStream: InputStream, results: MutableList<HistoryItem>) {
-        val content = FileUtils.readStringFromStream(inputStream, inputEncoding)
-        val respArray = JSONArray(content)
-        val jsonArray = respArray.getJSONArray(1)
-
-        var n = 0
-        val size = jsonArray.length()
-
-        while (n < size && n < BaseSuggestionsModel.MAX_RESULTS) {
-            val suggestion = jsonArray.getString(n)
-            results.add(HistoryItem(searchSubtitle + " \"$suggestion\"",
-                    suggestion, R.drawable.ic_search))
-
-            n++
-        }
+    override fun parseResults(responseBody: ResponseBody): List<SearchSuggestion> {
+        return JSONArray(responseBody.string())
+            .getJSONArray(1)
+            .map { it as String }
+            .map { SearchSuggestion("$searchSubtitle \"$it\"", it) }
     }
 
 }

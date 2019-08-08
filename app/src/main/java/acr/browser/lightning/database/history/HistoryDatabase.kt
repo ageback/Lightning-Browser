@@ -3,47 +3,42 @@
  */
 package acr.browser.lightning.database.history
 
-import acr.browser.lightning.R
-import acr.browser.lightning.database.HistoryItem
-import acr.browser.lightning.database.LazyDatabase
+import acr.browser.lightning.database.HistoryEntry
+import acr.browser.lightning.database.databaseDelegate
+import acr.browser.lightning.extensions.firstOrNullMap
+import acr.browser.lightning.extensions.useMap
 import android.app.Application
 import android.content.ContentValues
 import android.database.Cursor
 import android.database.DatabaseUtils
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
-import android.support.annotation.WorkerThread
-import com.anthonycr.bonsai.Completable
-import com.anthonycr.bonsai.Single
-import java.util.*
+import androidx.annotation.WorkerThread
+import io.reactivex.Completable
+import io.reactivex.Single
 import javax.inject.Inject
 import javax.inject.Singleton
 
 
 /**
- * The disk backed download database.
- * See [HistoryModel] for method
- * documentation.
+ * The disk backed download database. See [HistoryRepository] for function documentation.
  */
 @Singleton
 @WorkerThread
 class HistoryDatabase @Inject constructor(
-        application: Application
-) : SQLiteOpenHelper(application, DATABASE_NAME, null, DATABASE_VERSION), HistoryModel {
+    application: Application
+) : SQLiteOpenHelper(application, DATABASE_NAME, null, DATABASE_VERSION), HistoryRepository {
 
-    private val lazyDatabase = LazyDatabase(this)
-
-    private val database: SQLiteDatabase
-        get() = lazyDatabase.db()
+    private val database: SQLiteDatabase by databaseDelegate()
 
     // Creating Tables
     override fun onCreate(db: SQLiteDatabase) {
         val createHistoryTable = "CREATE TABLE $TABLE_HISTORY(" +
-                " $KEY_ID INTEGER PRIMARY KEY," +
-                " $KEY_URL TEXT," +
-                " $KEY_TITLE TEXT," +
-                " $KEY_TIME_VISITED INTEGER" +
-                ")"
+            " $KEY_ID INTEGER PRIMARY KEY," +
+            " $KEY_URL TEXT," +
+            " $KEY_TITLE TEXT," +
+            " $KEY_TIME_VISITED INTEGER" +
+            ")"
         db.execSQL(createHistoryTable)
     }
 
@@ -55,131 +50,129 @@ class HistoryDatabase @Inject constructor(
         onCreate(db)
     }
 
-    override fun deleteHistory(): Completable = Completable.create { subscriber ->
-        database.delete(TABLE_HISTORY, null, null)
-        database.close()
-
-        subscriber.onComplete()
+    override fun deleteHistory(): Completable = Completable.fromAction {
+        database.run {
+            delete(TABLE_HISTORY, null, null)
+            close()
+        }
     }
 
-    override fun deleteHistoryItem(url: String): Completable = Completable.create { subscriber ->
+    override fun deleteHistoryEntry(url: String): Completable = Completable.fromAction {
         database.delete(TABLE_HISTORY, "$KEY_URL = ?", arrayOf(url))
-
-        subscriber.onComplete()
     }
 
-    override fun visitHistoryItem(url: String, title: String?): Completable = Completable.create {
-        val values = ContentValues()
-        values.put(KEY_TITLE, title ?: "")
-        values.put(KEY_TIME_VISITED, System.currentTimeMillis())
-
-        val cursor = database.query(false, TABLE_HISTORY, arrayOf(KEY_URL),
-                "$KEY_URL = ?", arrayOf(url), null, null, null, "1")
-
-        if (cursor.count > 0) {
-            database.update(TABLE_HISTORY, values, KEY_URL + " = ?", arrayOf(url))
-        } else {
-            addHistoryItem(HistoryItem(url, title ?: ""))
+    override fun visitHistoryEntry(url: String, title: String?): Completable = Completable.fromAction {
+        val values = ContentValues().apply {
+            put(KEY_TITLE, title ?: "")
+            put(KEY_TIME_VISITED, System.currentTimeMillis())
         }
 
-        cursor.close()
+        database.query(
+            false,
+            TABLE_HISTORY,
+            arrayOf(KEY_URL),
+            "$KEY_URL = ?",
+            arrayOf(url),
+            null,
+            null,
+            null,
+            "1"
+        ).use {
+            if (it.count > 0) {
+                database.update(TABLE_HISTORY, values, "$KEY_URL = ?", arrayOf(url))
+            } else {
+                addHistoryEntry(HistoryEntry(url, title ?: ""))
+            }
+        }
     }
 
-    override fun findHistoryItemsContaining(query: String): Single<List<HistoryItem>> =
-            Single.create { subscriber ->
-                val itemList = ArrayList<HistoryItem>(5)
+    override fun findHistoryEntriesContaining(query: String): Single<List<HistoryEntry>> =
+        Single.fromCallable {
+            val search = "%$query%"
 
-                val search = "%$query%"
+            return@fromCallable database.query(
+                TABLE_HISTORY,
+                null,
+                "$KEY_TITLE LIKE ? OR $KEY_URL LIKE ?",
+                arrayOf(search, search),
+                null,
+                null,
+                "$KEY_TIME_VISITED DESC",
+                "5"
+            ).useMap { it.bindToHistoryEntry() }
+        }
 
-                val cursor = database.query(TABLE_HISTORY, null, "$KEY_TITLE LIKE ? OR $KEY_URL LIKE ?",
-                        arrayOf(search, search), null, null, KEY_TIME_VISITED + " DESC", "5")
-
-                while (cursor.moveToNext()) {
-                    itemList.add(cursor.bindToHistoryItem())
-                }
-
-                cursor.close()
-
-                subscriber.onItem(itemList)
-                subscriber.onComplete()
-            }
-
-    override fun lastHundredVisitedHistoryItems(): Single<List<HistoryItem>> =
-            Single.create { subscriber ->
-                val itemList = ArrayList<HistoryItem>(100)
-                val cursor = database.query(TABLE_HISTORY, null, null, null, null, null, KEY_TIME_VISITED + " DESC", "100")
-
-                while (cursor.moveToNext()) {
-                    itemList.add(cursor.bindToHistoryItem())
-                }
-
-                cursor.close()
-
-                subscriber.onItem(itemList)
-                subscriber.onComplete()
-            }
+    override fun lastHundredVisitedHistoryEntries(): Single<List<HistoryEntry>> =
+        Single.fromCallable {
+            database.query(
+                TABLE_HISTORY,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "$KEY_TIME_VISITED DESC",
+                "100"
+            ).useMap { it.bindToHistoryEntry() }
+        }
 
     @WorkerThread
-    @Synchronized private fun addHistoryItem(item: HistoryItem) {
-        val values = ContentValues()
-        values.put(KEY_URL, item.url)
-        values.put(KEY_TITLE, item.title)
-        values.put(KEY_TIME_VISITED, System.currentTimeMillis())
-        database.insert(TABLE_HISTORY, null, values)
+    private fun addHistoryEntry(item: HistoryEntry) {
+        database.insert(TABLE_HISTORY, null, item.toContentValues())
     }
 
     @WorkerThread
-    @Synchronized internal fun getHistoryItem(url: String): String? {
-        val cursor = database.query(TABLE_HISTORY, arrayOf(KEY_ID, KEY_URL, KEY_TITLE),
-                "$KEY_URL = ?", arrayOf(url), null, null, null, "1")
-        var m: String? = null
-        if (cursor != null) {
-            cursor.moveToFirst()
-            m = cursor.getString(0)
+    fun getHistoryEntry(url: String): String? =
+        database.query(
+            TABLE_HISTORY,
+            arrayOf(KEY_ID, KEY_URL, KEY_TITLE),
+            "$KEY_URL = ?",
+            arrayOf(url),
+            null,
+            null,
+            null,
+            "1"
+        ).firstOrNullMap { it.getString(0) }
 
-            cursor.close()
-        }
-        return m
+
+    fun getAllHistoryEntries(): List<HistoryEntry> {
+        return database.query(
+            TABLE_HISTORY,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "$KEY_TIME_VISITED DESC"
+        ).useMap { it.bindToHistoryEntry() }
     }
 
-    internal fun getAllHistoryItems(): List<HistoryItem> {
-        val itemList = ArrayList<HistoryItem>()
+    fun getHistoryEntriesCount(): Long = DatabaseUtils.queryNumEntries(database, TABLE_HISTORY)
 
-        val cursor = database.query(TABLE_HISTORY, null, null, null, null, null, KEY_TIME_VISITED + " DESC")
-
-        while (cursor.moveToNext()) {
-            itemList.add(cursor.bindToHistoryItem())
-        }
-
-        cursor.close()
-
-        return itemList
+    private fun HistoryEntry.toContentValues() = ContentValues().apply {
+        put(KEY_URL, url)
+        put(KEY_TITLE, title)
+        put(KEY_TIME_VISITED, lastTimeVisited)
     }
 
-    internal fun getHistoryItemsCount(): Long = DatabaseUtils.queryNumEntries(database, TABLE_HISTORY)
-
-    private fun Cursor.bindToHistoryItem(): HistoryItem {
-        val historyItem = HistoryItem()
-        historyItem.setUrl(this.getString(1))
-        historyItem.setTitle(this.getString(2))
-        historyItem.imageId = R.drawable.ic_history
-
-        return historyItem
-    }
+    private fun Cursor.bindToHistoryEntry() = HistoryEntry(
+        url = getString(1),
+        title = getString(2),
+        lastTimeVisited = getLong(3)
+    )
 
     companion object {
 
-        // All Static variables
-        // Database Version
+        // Database version
         private const val DATABASE_VERSION = 2
 
-        // Database Name
+        // Database name
         private const val DATABASE_NAME = "historyManager"
 
-        // HistoryItems table name
+        // HistoryEntry table name
         private const val TABLE_HISTORY = "history"
 
-        // HistoryItems Table Columns names
+        // HistoryEntry table columns names
         private const val KEY_ID = "id"
         private const val KEY_URL = "url"
         private const val KEY_TITLE = "title"

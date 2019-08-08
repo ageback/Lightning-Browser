@@ -1,39 +1,38 @@
 package acr.browser.lightning.database.downloads
 
-import acr.browser.lightning.database.LazyDatabase
+import acr.browser.lightning.database.databaseDelegate
+import acr.browser.lightning.extensions.firstOrNullMap
+import acr.browser.lightning.extensions.useMap
 import android.app.Application
 import android.content.ContentValues
 import android.database.Cursor
 import android.database.DatabaseUtils
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
-import com.anthonycr.bonsai.Completable
-import com.anthonycr.bonsai.Single
-import com.anthonycr.bonsai.SingleAction
+import io.reactivex.Completable
+import io.reactivex.Maybe
+import io.reactivex.Single
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * The disk backed download database. See [DownloadsModel] for method documentation.
+ * The disk backed download database. See [DownloadsRepository] for function documentation.
  */
 @Singleton
 class DownloadsDatabase @Inject constructor(
-        application: Application
-) : SQLiteOpenHelper(application, DATABASE_NAME, null, DATABASE_VERSION), DownloadsModel {
+    application: Application
+) : SQLiteOpenHelper(application, DATABASE_NAME, null, DATABASE_VERSION), DownloadsRepository {
 
-    private val lazy = LazyDatabase(this)
-    private val database: SQLiteDatabase
-        get() = lazy.db()
-
+    private val database: SQLiteDatabase by databaseDelegate()
 
     // Creating Tables
     override fun onCreate(db: SQLiteDatabase) {
         val createDownloadsTable = "CREATE TABLE ${DatabaseUtils.sqlEscapeString(TABLE_DOWNLOADS)}(" +
-                "${DatabaseUtils.sqlEscapeString(KEY_ID)} INTEGER PRIMARY KEY," +
-                "${DatabaseUtils.sqlEscapeString(KEY_URL)} TEXT," +
-                "${DatabaseUtils.sqlEscapeString(KEY_TITLE)} TEXT," +
-                "${DatabaseUtils.sqlEscapeString(KEY_SIZE)} TEXT" +
-                ')'
+            "${DatabaseUtils.sqlEscapeString(KEY_ID)} INTEGER PRIMARY KEY," +
+            "${DatabaseUtils.sqlEscapeString(KEY_URL)} TEXT," +
+            "${DatabaseUtils.sqlEscapeString(KEY_TITLE)} TEXT," +
+            "${DatabaseUtils.sqlEscapeString(KEY_SIZE)} TEXT" +
+            ')'
         db.execSQL(createDownloadsTable)
     }
 
@@ -45,136 +44,121 @@ class DownloadsDatabase @Inject constructor(
         onCreate(db)
     }
 
-    override fun findDownloadForUrl(url: String): Single<DownloadItem> =
-            Single.create { subscriber ->
-                val cursor = database.query(TABLE_DOWNLOADS, null, "$KEY_URL=?", arrayOf(url), null, null, "1")
+    override fun findDownloadForUrl(url: String): Maybe<DownloadEntry> = Maybe.fromCallable {
+        database.query(
+            TABLE_DOWNLOADS,
+            null,
+            "$KEY_URL=?",
+            arrayOf(url),
+            null,
+            null,
+            "1"
+        ).firstOrNullMap { it.bindToDownloadItem() }
+    }
 
-                if (cursor.moveToFirst()) {
-                    subscriber.onItem(cursor.bindToDownloadItem())
-                } else {
-                    subscriber.onItem(null)
-                }
+    override fun isDownload(url: String): Single<Boolean> = Single.fromCallable {
+        database.query(
+            TABLE_DOWNLOADS,
+            null,
+            "$KEY_URL=?",
+            arrayOf(url),
+            null,
+            null,
+            null,
+            "1"
+        ).use {
+            return@fromCallable it.moveToFirst()
+        }
+    }
 
-                cursor.close()
-                subscriber.onComplete()
+    override fun addDownloadIfNotExists(entry: DownloadEntry): Single<Boolean> = Single.fromCallable {
+        database.query(
+            TABLE_DOWNLOADS,
+            null,
+            "$KEY_URL=?",
+            arrayOf(entry.url),
+            null,
+            null,
+            "1"
+        ).use {
+            if (it.moveToFirst()) {
+                return@fromCallable false
+            }
+        }
+
+        val id = database.insert(TABLE_DOWNLOADS, null, entry.toContentValues())
+
+        return@fromCallable id != -1L
+    }
+
+    override fun addDownloadsList(downloadEntries: List<DownloadEntry>): Completable = Completable.fromAction {
+        database.apply {
+            beginTransaction()
+            setTransactionSuccessful()
+
+            for (item in downloadEntries) {
+                addDownloadIfNotExists(item).subscribe()
             }
 
-    override fun isDownload(url: String): Single<Boolean> = Single.create { subscriber ->
-        val cursor = database.query(TABLE_DOWNLOADS, null, "$KEY_URL=?", arrayOf(url), null, null, null, "1")
-
-        subscriber.onItem(cursor.moveToFirst())
-
-        cursor.close()
-        subscriber.onComplete()
+            endTransaction()
+        }
     }
 
-    override fun addDownloadIfNotExists(item: DownloadItem): Single<Boolean> =
-            Single.create(SingleAction { subscriber ->
-                val cursor = database.query(TABLE_DOWNLOADS, null, "$KEY_URL=?", arrayOf(item.url), null, null, "1")
-
-                if (cursor.moveToFirst()) {
-                    cursor.close()
-                    subscriber.onItem(false)
-                    subscriber.onComplete()
-                    return@SingleAction
-                }
-
-                cursor.close()
-
-                val id = database.insert(TABLE_DOWNLOADS, null, item.toContentValues())
-
-                subscriber.onItem(id != -1L)
-                subscriber.onComplete()
-            })
-
-    override fun addDownloadsList(downloadItems: List<DownloadItem>): Completable =
-            Completable.create { subscriber ->
-                database.beginTransaction()
-
-                for (item in downloadItems) {
-                    addDownloadIfNotExists(item).subscribe()
-                }
-
-                database.setTransactionSuccessful()
-                database.endTransaction()
-
-                subscriber.onComplete()
-            }
-
-    override fun deleteDownload(url: String): Single<Boolean> = Single.create { subscriber ->
-        val rows = database.delete(TABLE_DOWNLOADS, "$KEY_URL=?", arrayOf(url))
-
-        subscriber.onItem(rows > 0)
-        subscriber.onComplete()
+    override fun deleteDownload(url: String): Single<Boolean> = Single.fromCallable {
+        return@fromCallable database.delete(TABLE_DOWNLOADS, "$KEY_URL=?", arrayOf(url)) > 0
     }
 
-    override fun deleteAllDownloads(): Completable = Completable.create { subscriber ->
-        database.delete(TABLE_DOWNLOADS, null, null)
-
-        subscriber.onComplete()
+    override fun deleteAllDownloads(): Completable = Completable.fromAction {
+        database.run {
+            delete(TABLE_DOWNLOADS, null, null)
+            close()
+        }
     }
 
-    override fun getAllDownloads(): Single<List<DownloadItem>> = Single.create { subscriber ->
-        val cursor = database.query(TABLE_DOWNLOADS, null, null, null, null, null, null)
-
-        subscriber.onItem(cursor.bindToDownloadItemList())
-        subscriber.onComplete()
-
-        cursor.close()
+    override fun getAllDownloads(): Single<List<DownloadEntry>> = Single.fromCallable {
+        return@fromCallable database.query(
+            TABLE_DOWNLOADS,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "$KEY_ID DESC"
+        ).useMap { it.bindToDownloadItem() }
     }
 
     override fun count(): Long = DatabaseUtils.queryNumEntries(database, TABLE_DOWNLOADS)
 
     /**
-     * Maps the fields of [DownloadItem] to [ContentValues].
+     * Maps the fields of [DownloadEntry] to [ContentValues].
      */
-    private fun DownloadItem.toContentValues(): ContentValues {
-        val contentValues = ContentValues(3)
-        contentValues.put(KEY_TITLE, title)
-        contentValues.put(KEY_URL, url)
-        contentValues.put(KEY_SIZE, contentSize)
-
-        return contentValues
+    private fun DownloadEntry.toContentValues() = ContentValues(3).apply {
+        put(KEY_TITLE, title)
+        put(KEY_URL, url)
+        put(KEY_SIZE, contentSize)
     }
 
     /**
-     * Binds a [Cursor] to a single [DownloadItem].
+     * Binds a [Cursor] to a single [DownloadEntry].
      */
-    private fun Cursor.bindToDownloadItem(): DownloadItem {
-        val download = DownloadItem()
-
-        download.setUrl(getString(getColumnIndex(KEY_URL)))
-        download.setTitle(getString(getColumnIndex(KEY_TITLE)))
-        download.setContentSize(getString(getColumnIndex(KEY_SIZE)))
-
-        return download
-    }
-
-    /**
-     * Binds a [Cursor] to a [List] of [DownloadItem].
-     */
-    private fun Cursor.bindToDownloadItemList(): List<DownloadItem> = use {
-        val downloads = ArrayList<DownloadItem>()
-
-        while (moveToNext()) {
-            downloads.add(bindToDownloadItem())
-        }
-
-        return@use downloads
-    }
+    private fun Cursor.bindToDownloadItem() = DownloadEntry(
+        url = getString(getColumnIndex(KEY_URL)),
+        title = getString(getColumnIndex(KEY_TITLE)),
+        contentSize = getString(getColumnIndex(KEY_SIZE))
+    )
 
     companion object {
 
-        // Database Version
+        // Database version
         private const val DATABASE_VERSION = 1
 
-        // Database Name
+        // Database name
         private const val DATABASE_NAME = "downloadManager"
 
-        // HistoryItems table name
+        // DownloadItem table name
         private const val TABLE_DOWNLOADS = "download"
 
-        // HistoryItems Table Columns names
+        // DownloadItem table columns names
         private const val KEY_ID = "id"
         private const val KEY_URL = "url"
         private const val KEY_TITLE = "title"

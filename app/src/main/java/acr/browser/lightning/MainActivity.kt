@@ -7,18 +7,17 @@ import android.view.KeyEvent
 import android.view.Menu
 import android.webkit.CookieManager
 import android.webkit.CookieSyncManager
-import com.anthonycr.bonsai.Completable
+import io.reactivex.Completable
 
 class MainActivity : BrowserActivity() {
 
     @Suppress("DEPRECATION")
-    public override fun updateCookiePreference(): Completable = Completable.create { subscriber ->
+    public override fun updateCookiePreference(): Completable = Completable.fromAction {
         val cookieManager = CookieManager.getInstance()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
             CookieSyncManager.createInstance(this@MainActivity)
         }
-        cookieManager.setAcceptCookie(preferences.cookiesEnabled)
-        subscriber.onComplete()
+        cookieManager.setAcceptCookie(userPreferences.cookiesEnabled)
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -26,12 +25,13 @@ class MainActivity : BrowserActivity() {
         return super.onCreateOptionsMenu(menu)
     }
 
-    override fun onNewIntent(intent: Intent) = if (isPanicTrigger(intent)) {
-        panicClean()
-    } else {
-        handleNewIntent(intent)
-        super.onNewIntent(intent)
-    }
+    override fun onNewIntent(intent: Intent) =
+        if (intent.action == INTENT_PANIC_TRIGGER) {
+            panicClean()
+        } else {
+            handleNewIntent(intent)
+            super.onNewIntent(intent)
+        }
 
     override fun onPause() {
         super.onPause()
@@ -40,7 +40,7 @@ class MainActivity : BrowserActivity() {
 
     override fun updateHistory(title: String?, url: String) = addItemToHistory(title, url)
 
-    override val isIncognito = false
+    override fun isIncognito() = false
 
     override fun closeActivity() = closeDrawers {
         performExitCleanUp()

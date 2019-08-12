@@ -15,6 +15,7 @@ import acr.browser.lightning.database.Bookmark
 import acr.browser.lightning.database.HistoryEntry
 import acr.browser.lightning.database.bookmark.BookmarkRepository
 import acr.browser.lightning.database.history.HistoryRepository
+import acr.browser.lightning.device.ScreenSize
 import acr.browser.lightning.di.DatabaseScheduler
 import acr.browser.lightning.di.MainHandler
 import acr.browser.lightning.di.MainScheduler
@@ -76,7 +77,9 @@ import android.widget.TextView.OnEditorActionListener
 import androidx.annotation.ColorInt
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.core.net.toUri
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
@@ -90,10 +93,12 @@ import io.reactivex.rxkotlin.subscribeBy
 import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.browser_content.*
+import kotlinx.android.synthetic.main.search.*
 import kotlinx.android.synthetic.main.search_interface.*
 import kotlinx.android.synthetic.main.toolbar.*
 import java.io.IOException
 import javax.inject.Inject
+import kotlin.system.exitProcess
 
 abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIController, OnClickListener {
 
@@ -157,14 +162,12 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     @Inject @field:MainHandler lateinit var mainHandler: Handler
     @Inject lateinit var proxyUtils: ProxyUtils
     @Inject lateinit var logger: Logger
+    @Inject lateinit var bookmarksDialogBuilder: LightningDialogBuilder
+    @Inject lateinit var screenSize: ScreenSize
 
     // Image
     private var webPageBitmap: Bitmap? = null
     private val backgroundDrawable = ColorDrawable()
-    private var deleteIconDrawable: Drawable? = null
-    private var refreshIconDrawable: Drawable? = null
-    private var clearIconDrawable: Drawable? = null
-    private var iconDrawable: Drawable? = null
     private var sslDrawable: Drawable? = null
 
     private var presenter: BrowserPresenter? = null
@@ -255,8 +258,8 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         backgroundDrawable.color = primaryColor
 
         // Drawer stutters otherwise
-        left_drawer.setLayerType(View.LAYER_TYPE_NONE, null)
-        right_drawer.setLayerType(View.LAYER_TYPE_NONE, null)
+        left_drawer.setLayerType(LAYER_TYPE_NONE, null)
+        right_drawer.setLayerType(LAYER_TYPE_NONE, null)
 
         drawer_layout.addDrawerListener(object : DrawerLayout.DrawerListener {
             override fun onDrawerSlide(drawerView: View, slideOffset: Float) = Unit
@@ -267,11 +270,11 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
             override fun onDrawerStateChanged(newState: Int) {
                 if (newState == DrawerLayout.STATE_DRAGGING) {
-                    left_drawer.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                    right_drawer.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                    left_drawer.setLayerType(LAYER_TYPE_HARDWARE, null)
+                    right_drawer.setLayerType(LAYER_TYPE_HARDWARE, null)
                 } else if (newState == DrawerLayout.STATE_IDLE) {
-                    left_drawer.setLayerType(View.LAYER_TYPE_NONE, null)
-                    right_drawer.setLayerType(View.LAYER_TYPE_NONE, null)
+                    left_drawer.setLayerType(LAYER_TYPE_NONE, null)
+                    right_drawer.setLayerType(LAYER_TYPE_NONE, null)
                 }
             }
         })
@@ -283,7 +286,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         setNavigationDrawerWidth()
         drawer_layout.addDrawerListener(DrawerLocker())
 
-        webPageBitmap = ThemeUtils.getThemedBitmap(this, R.drawable.ic_webpage, isDarkTheme)
+        webPageBitmap = drawable(R.drawable.ic_webpage).toBitmap()
 
         val fragmentManager = supportFragmentManager
 
@@ -294,7 +297,8 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             fragmentManager.beginTransaction().remove(tabsFragment).commit()
         }
 
-        tabsView = tabsFragment ?: TabsFragment.createTabsFragment(isIncognito(), shouldShowTabsInDrawer)
+        tabsView = tabsFragment
+            ?: TabsFragment.createTabsFragment(isIncognito(), shouldShowTabsInDrawer)
 
         if (bookmarksFragment != null) {
             fragmentManager.beginTransaction().remove(bookmarksFragment).commit()
@@ -310,7 +314,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             .replace(getBookmarksFragmentViewId(), bookmarksView as Fragment, TAG_BOOKMARK_FRAGMENT)
             .commit()
         if (shouldShowTabsInDrawer) {
-            toolbar_layout.removeView(findViewById(R.id.tabs_toolbar_container))
+            tabs_toolbar_container.visibility = GONE
         }
 
         // set display options of the ActionBar
@@ -328,7 +332,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         arrowImageView = customView.findViewById<ImageView>(R.id.arrow).also {
             if (shouldShowTabsInDrawer) {
                 if (it.width <= 0) {
-                    it.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+                    it.measure(MeasureSpec.UNSPECIFIED, MeasureSpec.UNSPECIFIED)
                 }
                 updateTabNumber(0)
 
@@ -339,7 +343,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 // Post drawer locking in case the activity is being recreated
                 mainHandler.post { drawer_layout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, getTabDrawer()) }
                 it.setImageResource(R.drawable.ic_action_home)
-                it.setColorFilter(iconColor, PorterDuff.Mode.SRC_IN)
             }
         }
 
@@ -348,25 +351,14 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
         customView.findViewById<FrameLayout>(R.id.arrow_button).setOnClickListener(this)
 
-        val iconBounds = Utils.dpToPx(24f)
         backgroundColor = ThemeUtils.getPrimaryColor(this)
-        deleteIconDrawable = ThemeUtils.getThemedDrawable(this, R.drawable.ic_action_delete, isDarkTheme).apply {
-            setBounds(0, 0, iconBounds, iconBounds)
-        }
-        refreshIconDrawable = ThemeUtils.getThemedDrawable(this, R.drawable.ic_action_refresh, isDarkTheme).apply {
-            setBounds(0, 0, iconBounds, iconBounds)
-        }
-        clearIconDrawable = ThemeUtils.getThemedDrawable(this, R.drawable.ic_action_delete, isDarkTheme).apply {
-            setBounds(0, 0, iconBounds, iconBounds)
-        }
 
         // create the search EditText in the ToolBar
         searchView = customView.findViewById<SearchView>(R.id.search).apply {
             setHintTextColor(ThemeUtils.getThemedTextHintColor(isDarkTheme))
             setTextColor(if (isDarkTheme) Color.WHITE else Color.BLACK)
-            iconDrawable = refreshIconDrawable
-            compoundDrawablePadding = Utils.dpToPx(3f)
-            setCompoundDrawablesWithIntrinsicBounds(sslDrawable, null, refreshIconDrawable, null)
+            setCompoundDrawablesWithIntrinsicBounds(sslDrawable, null, null, null)
+            search_refresh.setImageResource(R.drawable.ic_action_refresh)
 
             val searchListener = SearchListenerClass()
             setOnKeyListener(searchListener)
@@ -378,9 +370,9 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             initializeSearchSuggestions(this)
         }
 
-        searchView?.onRightDrawableClickListener = {
-            if (it.hasFocus()) {
-                it.setText("")
+        search_refresh.setOnClickListener {
+            if (searchView?.hasFocus() == true) {
+                searchView?.setText("")
             } else {
                 refreshOrStop()
             }
@@ -454,7 +446,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         // System exit needed in the case of receiving
         // the panic intent since finish() isn't completely
         // closing the browser
-        System.exit(1)
+        exitProcess(1)
     }
 
     private inner class SearchListenerClass : OnKeyListener,
@@ -518,8 +510,8 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
                 // Hack to make sure the text gets selected
                 (v as SearchView).selectAll()
-                iconDrawable = clearIconDrawable
-                searchView?.setCompoundDrawablesWithIntrinsicBounds(null, null, clearIconDrawable, null)
+                searchView?.setCompoundDrawablesWithIntrinsicBounds(null, null, null, null)
+                search_refresh.setImageResource(R.drawable.ic_action_delete)
             }
 
             if (!hasFocus) {
@@ -572,7 +564,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
     private fun setNavigationDrawerWidth() {
         val width = resources.displayMetrics.widthPixels - Utils.dpToPx(56f)
-        val maxWidth = if (isTablet) {
+        val maxWidth = if (screenSize.isTablet()) {
             Utils.dpToPx(320f)
         } else {
             Utils.dpToPx(300f)
@@ -607,7 +599,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             if (!isIncognito() && !colorMode && !isDarkTheme) {
                 changeToolbarBackground(webBitmap, null)
             } else if (!isIncognito() && currentView != null && !isDarkTheme) {
-                changeToolbarBackground(currentView.favicon, null)
+                changeToolbarBackground(currentView.favicon ?: webBitmap, null)
             } else if (!isIncognito() && !isDarkTheme) {
                 changeToolbarBackground(webBitmap, null)
             }
@@ -616,8 +608,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         val manager = supportFragmentManager
         val tabsFragment = manager.findFragmentByTag(TAG_TABS_FRAGMENT) as? TabsFragment
         tabsFragment?.reinitializePreferences()
-        val bookmarksFragment = manager.findFragmentByTag(TAG_BOOKMARK_FRAGMENT)as? BookmarksFragment
-        bookmarksFragment?.reinitializePreferences()
 
         // TODO layout transition causing memory leak
         //        content_frame.setLayoutTransition(new LayoutTransition());
@@ -767,7 +757,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                     && currentView.url.isNotBlank()
                     && !UrlUtils.isSpecialUrl(currentView.url)) {
                     HistoryEntry(currentView.url, currentView.title).also {
-                        Utils.createShortcut(this, it, currentView.favicon)
+                        Utils.createShortcut(this, it, currentView.favicon ?: webPageBitmap!!)
                         logger.log(TAG, "Creating shortcut: ${it.title} ${it.url}")
                     }
                 }
@@ -846,16 +836,8 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
     // By using a manager, adds a bookmark and notifies third parties about that
     private fun addBookmark(title: String, url: String) {
-        bookmarkManager.addBookmarkIfNotExists(Bookmark.Entry(url, title, 0, Bookmark.Folder.Root))
-            .subscribeOn(databaseScheduler)
-            .observeOn(mainScheduler)
-            .subscribe { boolean ->
-                if (boolean) {
-                    suggestionsAdapter?.refreshBookmarks()
-                    bookmarksView?.handleUpdatedUrl(url)
-                    toast(R.string.message_bookmark_added)
-                }
-            }
+        val bookmark = Bookmark.Entry(url, title, 0, Bookmark.Folder.Root)
+        bookmarksDialogBuilder.showAddBookmarkDialog(this, this, bookmark)
     }
 
     private fun deleteBookmark(title: String, url: String) {
@@ -864,8 +846,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             .observeOn(mainScheduler)
             .subscribe { boolean ->
                 if (boolean) {
-                    suggestionsAdapter?.refreshBookmarks()
-                    bookmarksView?.handleUpdatedUrl(url)
+                    handleBookmarksChange()
                 }
             }
     }
@@ -914,12 +895,12 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     private fun showFindInPageControls(text: String) {
-        search_bar.visibility = View.VISIBLE
+        search_bar.visibility = VISIBLE
 
-        findViewById<TextView>(R.id.search_query).apply { this.text = "'$text'" }
-        findViewById<ImageButton>(R.id.button_next).apply { setOnClickListener(this@BrowserActivity) }
-        findViewById<ImageButton>(R.id.button_back).apply { setOnClickListener(this@BrowserActivity) }
-        findViewById<ImageButton>(R.id.button_quit).apply { setOnClickListener(this@BrowserActivity) }
+        findViewById<TextView>(R.id.search_query).text = "'$text'"
+        findViewById<ImageButton>(R.id.button_next).setOnClickListener(this)
+        findViewById<ImageButton>(R.id.button_back).setOnClickListener(this)
+        findViewById<ImageButton>(R.id.button_quit).setOnClickListener(this)
     }
 
     override fun getTabModel(): TabsManager = tabsManager
@@ -962,18 +943,18 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         sslDrawable = when (sslState) {
             is SSLState.None -> null
             is SSLState.Valid -> {
-                val bitmap = DrawableUtils.getImageInsetInRoundedSquare(this, R.drawable.ic_secured, R.color.ssl_secured)
+                val bitmap = DrawableUtils.createImageInsetInRoundedSquare(this, R.drawable.ic_secured)
                 val securedDrawable = BitmapDrawable(resources, bitmap)
                 securedDrawable
             }
             is SSLState.Invalid -> {
-                val bitmap = DrawableUtils.getImageInsetInRoundedSquare(this, R.drawable.ic_unsecured, R.color.ssl_unsecured)
+                val bitmap = DrawableUtils.createImageInsetInRoundedSquare(this, R.drawable.ic_unsecured)
                 val unsecuredDrawable = BitmapDrawable(resources, bitmap)
                 unsecuredDrawable
             }
         }
 
-        searchView?.setCompoundDrawablesWithIntrinsicBounds(sslDrawable, null, iconDrawable, null)
+        searchView?.setCompoundDrawablesWithIntrinsicBounds(sslDrawable, null, null, null)
     }
 
     override fun tabChanged(tab: LightningView) {
@@ -1040,13 +1021,13 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     override fun showBlockedLocalFileDialog(onPositiveClick: Function0<Unit>) =
-        AlertDialog.Builder(this).apply {
-            setCancelable(true)
-            setTitle(R.string.title_warning)
-            setMessage(R.string.message_blocked_local)
-            setNegativeButton(android.R.string.cancel, null)
-            setPositiveButton(R.string.action_open) { _, _ -> onPositiveClick.invoke() }
-        }.resizeAndShow()
+        AlertDialog.Builder(this)
+            .setCancelable(true)
+            .setTitle(R.string.title_warning)
+            .setMessage(R.string.message_blocked_local)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.action_open) { _, _ -> onPositiveClick.invoke() }
+            .resizeAndShow()
 
     override fun showSnackbar(@StringRes resource: Int) = snackbar(resource)
 
@@ -1165,7 +1146,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 // In landscape toolbar should be 48 dp tall
                 Utils.dpToPx(52f)
             }
-            toolbar.layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, toolbarSize)
+            toolbar.layoutParams = ConstraintLayout.LayoutParams(LayoutParams.MATCH_PARENT, toolbarSize)
             toolbar.minimumHeight = toolbarSize
             toolbar.doOnLayout { setWebViewTranslation(toolbar_layout.height.toFloat()) }
             toolbar.requestLayout()
@@ -1301,12 +1282,12 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
      * @param favicon the Bitmap to extract the color from
      * @param tabBackground the optional LinearLayout to color
      */
-    override fun changeToolbarBackground(favicon: Bitmap, tabBackground: Drawable?) {
+    override fun changeToolbarBackground(favicon: Bitmap?, tabBackground: Drawable?) {
         val defaultColor = ContextCompat.getColor(this, R.color.primary_color)
         if (currentUiColor == Color.BLACK) {
             currentUiColor = defaultColor
         }
-        Palette.from(favicon).generate { palette ->
+        Palette.from(favicon ?: webPageBitmap!!).generate { palette ->
             // OR with opaque black to remove transparency glitches
             val color = Color.BLACK or (palette?.getVibrantColor(defaultColor) ?: defaultColor)
 
@@ -1372,7 +1353,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     override fun updateTabNumber(number: Int) {
         if (shouldShowTabsInDrawer) {
             if (isIncognito()) {
-                arrowImageView?.setImageDrawable(ThemeUtils.getThemedDrawable(this, R.drawable.incognito_mode, true))
+                arrowImageView?.setImageResource(R.drawable.incognito_mode)
             } else {
                 arrowImageView?.setImageBitmap(DrawableUtils.getRoundedNumberImage(number, Utils.dpToPx(24f),
                     Utils.dpToPx(24f), ThemeUtils.getIconThemeColor(this, isDarkTheme), Utils.dpToPx(2.5f)))
@@ -1400,12 +1381,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
      * previously searched URLs
      */
     private fun initializeSearchSuggestions(getUrl: AutoCompleteTextView) {
-
-        suggestionsAdapter = SuggestionsAdapter(this, isDarkTheme, isIncognito())
-
-        getUrl.threshold = 1
-        getUrl.dropDownWidth = -1
-        getUrl.dropDownAnchor = R.id.toolbar_layout
         getUrl.onItemClickListener = OnItemClickListener { _, view, _, _ ->
             var url: String? = null
             val urlString = (view.findViewById<View>(R.id.url) as TextView).text
@@ -1427,8 +1402,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             presenter?.onAutoCompleteItemPressed()
         }
 
-        getUrl.setSelectAllOnFocus(true)
-        getUrl.setAdapter<SuggestionsAdapter>(suggestionsAdapter)
+        getUrl.setAdapter(SuggestionsAdapter(this, isDarkTheme, isIncognito()))
     }
 
     /**
@@ -1642,8 +1616,8 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         decorView.addView(fullscreenContainerView, COVER_SCREEN_PARAMS)
         fullscreenContainerView?.addView(customView, COVER_SCREEN_PARAMS)
         decorView.requestLayout()
-        setFullscreen(true, true)
-        currentTab?.setVisibility(View.INVISIBLE)
+        setFullscreen(enabled = true, immersive = true)
+        currentTab?.setVisibility(INVISIBLE)
     }
 
     override fun onHideCustomView() {
@@ -1661,7 +1635,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             return
         }
         logger.log(TAG, "onHideCustomView")
-        currentTab.setVisibility(View.VISIBLE)
+        currentTab.setVisibility(VISIBLE)
         try {
             customView?.keepScreenOn = false
         } catch (e: SecurityException) {
@@ -1755,20 +1729,20 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         val decor = window.decorView
         if (enabled) {
             if (immersive) {
-                decor.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    or View.SYSTEM_UI_FLAG_FULLSCREEN
-                    or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+                decor.systemUiVisibility = (SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or SYSTEM_UI_FLAG_FULLSCREEN
+                    or SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
             } else {
-                decor.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+                decor.systemUiVisibility = SYSTEM_UI_FLAG_VISIBLE
             }
             window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN)
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-            decor.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+            decor.systemUiVisibility = SYSTEM_UI_FLAG_VISIBLE
         }
     }
 
@@ -1835,7 +1809,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
             var height = toolbar_layout.height
             if (height == 0) {
-                toolbar_layout.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+                toolbar_layout.measure(MeasureSpec.UNSPECIFIED, MeasureSpec.UNSPECIFIED)
                 height = toolbar_layout.measuredHeight
             }
 
@@ -1863,6 +1837,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         if (currentTab != null) {
             bookmarksView?.handleUpdatedUrl(currentTab.url)
         }
+        suggestionsAdapter?.refreshBookmarks()
     }
 
     override fun handleDownloadDeleted() {
@@ -1901,8 +1876,8 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
      */
     private fun setIsLoading(isLoading: Boolean) {
         if (searchView?.hasFocus() == false) {
-            iconDrawable = if (isLoading) deleteIconDrawable else refreshIconDrawable
-            searchView?.setCompoundDrawablesWithIntrinsicBounds(sslDrawable, null, iconDrawable, null)
+            searchView?.setCompoundDrawablesWithIntrinsicBounds(sslDrawable, null, null, null)
+            search_refresh.setImageResource(if (isLoading) R.drawable.ic_action_delete else R.drawable.ic_action_refresh)
         }
     }
 
@@ -1942,7 +1917,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             R.id.button_quit -> {
                 findResult?.clearResults()
                 findResult = null
-                search_bar.visibility = View.GONE
+                search_bar.visibility = GONE
             }
         }
     }

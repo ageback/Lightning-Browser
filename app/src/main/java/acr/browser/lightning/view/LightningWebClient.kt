@@ -38,6 +38,7 @@ import java.io.File
 import java.net.URISyntaxException
 import java.util.*
 import javax.inject.Inject
+import kotlin.math.abs
 
 class LightningWebClient(
     private val activity: Activity,
@@ -85,18 +86,17 @@ class LightningWebClient(
     }
 
     private fun chooseAdBlocker(): AdBlocker = if (userPreferences.adBlockEnabled) {
-        activity.injector.provideAssetsAdBlocker()
+        activity.injector.provideBloomFilterAdBlocker()
     } else {
         activity.injector.provideNoOpAdBlocker()
     }
 
-    private fun isAd(pageUrl: String, requestUrl: String) =
+    private fun shouldRequestBeBlocked(pageUrl: String, requestUrl: String) =
         !whitelistModel.isUrlAllowedAds(pageUrl) && adBlock.isAd(requestUrl)
 
     @TargetApi(Build.VERSION_CODES.LOLLIPOP)
     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-        val pageUrl = currentUrl
-        if (isAd(pageUrl, request.url.toString())) {
+        if (shouldRequestBeBlocked(currentUrl, request.url.toString())) {
             val empty = ByteArrayInputStream(emptyResponseByteArray)
             return WebResourceResponse("text/plain", "utf-8", empty)
         }
@@ -106,8 +106,7 @@ class LightningWebClient(
     @Suppress("OverridingDeprecatedMember")
     @TargetApi(Build.VERSION_CODES.KITKAT_WATCH)
     override fun shouldInterceptRequest(view: WebView, url: String): WebResourceResponse? {
-        val pageUrl = currentUrl
-        if (isAd(pageUrl, url)) {
+        if (shouldRequestBeBlocked(currentUrl, url)) {
             val empty = ByteArrayInputStream(emptyResponseByteArray)
             return WebResourceResponse("text/plain", "utf-8", empty)
         }
@@ -176,7 +175,7 @@ class LightningWebClient(
         if (view.isShown && lightningView.userPreferences.textReflowEnabled) {
             if (isRunning)
                 return
-            val changeInPercent = Math.abs(100 - 100 / zoomScale * newScale)
+            val changeInPercent = abs(100 - 100 / zoomScale * newScale)
             if (changeInPercent > 2.5f && !isRunning) {
                 isRunning = view.postDelayed({
                     zoomScale = newScale
@@ -269,13 +268,22 @@ class LightningWebClient(
         return if (isMailOrIntent(url, view) || intentUtils.startActivityForUrl(view, url)) {
             // If it was a mailto: link, or an intent, or could be launched elsewhere, do that
             true
-        } else continueLoadingUrl(view, url, headers)
-
-        // If none of the special conditions was met, continue with loading the url
+        } else {
+            // If none of the special conditions was met, continue with loading the url
+            continueLoadingUrl(view, url, headers)
+        }
     }
 
-    private fun continueLoadingUrl(webView: WebView, url: String, headers: Map<String, String>) =
-        when {
+    private fun continueLoadingUrl(webView: WebView, url: String, headers: Map<String, String>): Boolean {
+        if (!URLUtil.isNetworkUrl(url)
+            && !URLUtil.isFileUrl(url)
+            && !URLUtil.isAboutUrl(url)
+            && !URLUtil.isDataUrl(url)
+            && !URLUtil.isJavaScriptUrl(url)) {
+            webView.stopLoading()
+            return true
+        }
+        return when {
             headers.isEmpty() -> false
             ApiUtils.doesSupportWebViewHeaders() -> {
                 webView.loadUrl(url, headers)
@@ -283,12 +291,12 @@ class LightningWebClient(
             }
             else -> false
         }
+    }
 
     private fun isMailOrIntent(url: String, view: WebView): Boolean {
         if (url.startsWith("mailto:")) {
             val mailTo = MailTo.parse(url)
-            val i = Utils.newEmailIntent(mailTo.to, mailTo.subject,
-                mailTo.body, mailTo.cc)
+            val i = Utils.newEmailIntent(mailTo.to, mailTo.subject, mailTo.body, mailTo.cc)
             activity.startActivity(i)
             view.reload()
             return true

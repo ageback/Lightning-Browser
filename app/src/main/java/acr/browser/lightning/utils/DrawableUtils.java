@@ -7,21 +7,19 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
-import android.graphics.PorterDuffColorFilter;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.view.View;
+
+import acr.browser.lightning.R;
 import androidx.annotation.ColorInt;
-import androidx.annotation.ColorRes;
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
-import android.view.View;
-
-import acr.browser.lightning.R;
 
 public final class DrawableUtils {
 
@@ -32,12 +30,10 @@ public final class DrawableUtils {
      *
      * @param context     the context needed to work with resources.
      * @param drawableRes the drawable to inset on the rounded drawable.
-     * @param colorRes    the color of the image to draw on the rounded drawable.
      * @return a bitmap with the desired content.
      */
     @NonNull
-    public static Bitmap getImageInsetInRoundedSquare(Context context, @DrawableRes int drawableRes, @ColorRes int colorRes) {
-        final int imageColor = ContextCompat.getColor(context, colorRes);
+    public static Bitmap createImageInsetInRoundedSquare(Context context, @DrawableRes int drawableRes) {
         final Bitmap icon = ThemeUtils.getBitmapFromVectorDrawable(context, drawableRes);
 
         final Bitmap image = Bitmap.createBitmap(icon.getWidth(), icon.getHeight(), Bitmap.Config.ARGB_8888);
@@ -54,7 +50,6 @@ public final class DrawableUtils {
         canvas.drawRoundRect(outer, radius, radius, paint);
 
         final Rect dest = new Rect(Math.round(outer.left + radius), Math.round(outer.top + radius), Math.round(outer.right - radius), Math.round(outer.bottom - radius));
-        paint.setColorFilter(new PorterDuffColorFilter(imageColor, PorterDuff.Mode.SRC_IN));
         canvas.drawBitmap(icon, null, dest, paint);
 
         return image;
@@ -97,7 +92,7 @@ public final class DrawableUtils {
         final int xPos = (canvas.getWidth() / 2);
         final int yPos = (int) ((canvas.getHeight() / 2) - ((paint.descent() + paint.ascent()) / 2));
 
-        canvas.drawText(String.valueOf(text), xPos, yPos, paint);
+        canvas.drawText(text, xPos, yPos, paint);
 
         return image;
     }

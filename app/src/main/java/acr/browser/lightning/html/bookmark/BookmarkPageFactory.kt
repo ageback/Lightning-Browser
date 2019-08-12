@@ -35,8 +35,8 @@ class BookmarkPageFactory @Inject constructor(
 ) : HtmlPageFactory {
 
     private val title = application.getString(R.string.action_bookmarks)
-    private val folderIconFile = File(application.cacheDir, FOLDER_ICON)
-    private val defaultIconFile = File(application.cacheDir, DEFAULT_ICON)
+    private val folderIconFile by lazy { File(application.cacheDir, FOLDER_ICON) }
+    private val defaultIconFile by lazy { File(application.cacheDir, DEFAULT_ICON) }
 
     override fun buildPage(): Single<String> = bookmarkModel
         .getAllBookmarksSorted()
@@ -68,7 +68,7 @@ class BookmarkPageFactory @Inject constructor(
         }
         .ignoreElements()
         .toSingle {
-            cacheIcon(ThemeUtils.getThemedBitmap(application, R.drawable.ic_folder, false), folderIconFile)
+            cacheIcon(ThemeUtils.createThemedBitmap(application, R.drawable.ic_folder, false), folderIconFile)
             cacheIcon(faviconModel.getDefaultBitmapForString(null), defaultIconFile)
 
             "$FILE${createBookmarkPage(null)}"
@@ -125,15 +125,15 @@ class BookmarkPageFactory @Inject constructor(
                     .subscribe()
             }
 
-            "$FILE$faviconFile"
+            faviconFile
         } else {
-            "$FILE$defaultIconFile"
+            defaultIconFile
         }
 
         return BookmarkViewModel(
             title = entry.title,
             url = entry.url,
-            iconUrl = iconUrl
+            iconUrl = iconUrl.toString()
         )
     }
 

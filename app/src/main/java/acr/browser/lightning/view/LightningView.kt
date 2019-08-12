@@ -5,7 +5,6 @@
 package acr.browser.lightning.view
 
 import acr.browser.lightning.constant.DESKTOP_USER_AGENT
-import acr.browser.lightning.constant.MOBILE_USER_AGENT
 import acr.browser.lightning.controller.UIController
 import acr.browser.lightning.di.DatabaseScheduler
 import acr.browser.lightning.di.MainScheduler
@@ -15,6 +14,7 @@ import acr.browser.lightning.download.LightningDownloadListener
 import acr.browser.lightning.log.Logger
 import acr.browser.lightning.network.NetworkConnectivityModel
 import acr.browser.lightning.preference.UserPreferences
+import acr.browser.lightning.preference.userAgent
 import acr.browser.lightning.ssl.SSLState
 import acr.browser.lightning.utils.ProxyUtils
 import acr.browser.lightning.utils.UrlUtils
@@ -154,8 +154,8 @@ class LightningView(
      *
      * @return a non-null Bitmap with the current favicon.
      */
-    val favicon: Bitmap
-        get() = titleInfo.getFavicon(uiController.getUseDarkTheme())
+    val favicon: Bitmap?
+        get() = titleInfo.getFavicon()
 
     /**
      * Get the current title of the page, retrieved from the title object.
@@ -197,6 +197,10 @@ class LightningView(
                 isAlwaysDrawnWithCacheEnabled = false
             }
             setBackgroundColor(Color.WHITE)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
+            }
 
             isScrollbarFadingEnabled = true
             isSaveEnabled = true
@@ -263,6 +267,12 @@ class LightningView(
             requestHeaders.remove(HEADER_DNT)
         }
 
+        if (userPreferences.saveDataEnabled) {
+            requestHeaders[HEADER_SAVEDATA] = "on"
+        } else {
+            requestHeaders.remove(HEADER_SAVEDATA)
+        }
+
         if (userPreferences.removeIdentifyingHeadersEnabled) {
             requestHeaders[HEADER_REQUESTED_WITH] = ""
             requestHeaders[HEADER_WAP_PROFILE] = ""
@@ -280,7 +290,7 @@ class LightningView(
             settings.setGeolocationEnabled(false)
         }
 
-        setUserAgent(userPreferences.userAgentChoice)
+        setUserAgentForPreference(userPreferences)
 
         settings.saveFormData = userPreferences.savePasswordsEnabled && !isIncognito
 
@@ -397,38 +407,17 @@ class LightningView(
         if (!toggleDesktop) {
             webView?.settings?.userAgentString = DESKTOP_USER_AGENT
         } else {
-            setUserAgent(userPreferences.userAgentChoice)
+            setUserAgentForPreference(userPreferences)
         }
 
         toggleDesktop = !toggleDesktop
     }
 
     /**
-     * This method sets the user agent of the current tab. There are four options, 1, 2, 3, 4.
-     *
-     * 1. use the default user agent
-     * 2. use the desktop user agent
-     * 3. use the mobile user agent
-     * 4. use a custom user agent, or the default user agent if none was set.
-     *
-     * @param choice  the choice of user agent to use, see above comments.
+     * This method sets the user agent of the current tab based on the user's preference
      */
-    @SuppressLint("NewApi")
-    private fun setUserAgent(choice: Int) {
-        val settings = webView?.settings ?: return
-
-        when (choice) {
-            1 -> settings.userAgentString = WebSettings.getDefaultUserAgent(activity)
-            2 -> settings.userAgentString = DESKTOP_USER_AGENT
-            3 -> settings.userAgentString = MOBILE_USER_AGENT
-            4 -> {
-                var ua = userPreferences.userAgentString
-                if (ua.isEmpty()) {
-                    ua = " "
-                }
-                settings.userAgentString = ua
-            }
-        }
+    private fun setUserAgentForPreference(userPreferences: UserPreferences) {
+        webView?.settings?.userAgentString = userPreferences.userAgent(activity.application)
     }
 
     /**
@@ -894,8 +883,9 @@ class LightningView(
         const val HEADER_REQUESTED_WITH = "X-Requested-With"
         const val HEADER_WAP_PROFILE = "X-Wap-Profile"
         private const val HEADER_DNT = "DNT"
+        private const val HEADER_SAVEDATA = "Save-Data"
 
-        private val API = android.os.Build.VERSION.SDK_INT
+        private val API = Build.VERSION.SDK_INT
         private val SCROLL_UP_THRESHOLD = Utils.dpToPx(10f)
 
         private val negativeColorArray = floatArrayOf(

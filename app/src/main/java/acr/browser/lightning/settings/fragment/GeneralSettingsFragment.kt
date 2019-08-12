@@ -1,6 +1,5 @@
 package acr.browser.lightning.settings.fragment
 
-import acr.browser.lightning.BuildConfig
 import acr.browser.lightning.R
 import acr.browser.lightning.constant.*
 import acr.browser.lightning.di.injector
@@ -82,21 +81,15 @@ class GeneralSettingsFragment : AbstractSettingsFragment() {
         )
 
         checkBoxPreference(
-            preference = SETTINGS_ADS,
-            isEnabled = BuildConfig.FULL_VERSION,
-            summary = if (BuildConfig.FULL_VERSION) {
-                null
-            } else {
-                getString(R.string.upsell_plus_version)
-            },
-            isChecked = BuildConfig.FULL_VERSION && userPreferences.adBlockEnabled,
-            onCheckChange = { userPreferences.adBlockEnabled = it }
-        )
-
-        checkBoxPreference(
             preference = SETTINGS_IMAGES,
             isChecked = userPreferences.blockImagesEnabled,
             onCheckChange = { userPreferences.blockImagesEnabled = it }
+        )
+
+        checkBoxPreference(
+            preference = SETTINGS_SAVEDATA,
+            isChecked = userPreferences.saveDataEnabled,
+            onCheckChange = { userPreferences.saveDataEnabled = it }
         )
 
         checkBoxPreference(
@@ -153,11 +146,11 @@ class GeneralSettingsFragment : AbstractSettingsFragment() {
         // Limit the number of characters since the port needs to be of type int
         // Use input filters to limit the EditText length and determine the max
         // length by using length of integer MAX_VALUE
-        val maxCharacters = Integer.toString(Integer.MAX_VALUE).length
+        val maxCharacters = Integer.MAX_VALUE.toString().length
         eProxyPort.filters = arrayOf<InputFilter>(InputFilter.LengthFilter(maxCharacters - 1))
 
         eProxyHost.text = userPreferences.proxyHost
-        eProxyPort.text = Integer.toString(userPreferences.proxyPort)
+        eProxyPort.text = userPreferences.proxyPort.toString()
 
         BrowserDialog.showCustomDialog(activity) {
             setTitle(R.string.manual_proxy)
@@ -441,8 +434,8 @@ class GeneralSettingsFragment : AbstractSettingsFragment() {
 
     companion object {
         private const val SETTINGS_PROXY = "proxy"
-        private const val SETTINGS_ADS = "cb_ads"
         private const val SETTINGS_IMAGES = "cb_images"
+        private const val SETTINGS_SAVEDATA = "savedata"
         private const val SETTINGS_JAVASCRIPT = "cb_javascript"
         private const val SETTINGS_COLOR_MODE = "cb_colormode"
         private const val SETTINGS_USER_AGENT = "agent"

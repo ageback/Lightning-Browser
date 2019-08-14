@@ -44,6 +44,7 @@ import android.app.NotificationManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -132,9 +133,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     private var swapBookmarksAndTabs: Boolean = false
 
     private var originalOrientation: Int = 0
-    private var backgroundColor: Int = 0
-    private var iconColor: Int = 0
-    private var disabledIconColor: Int = 0
     private var currentUiColor = Color.BLACK
     private var keyDownStartTime: Long = 0
     private var searchText: String? = null
@@ -244,12 +242,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
         //TODO make sure dark theme flag gets set correctly
         isDarkTheme = userPreferences.useTheme != 0 || isIncognito()
-        iconColor = ThemeUtils.getIconThemeColor(this, isDarkTheme)
-        disabledIconColor = if (isDarkTheme) {
-            ContextCompat.getColor(this, R.color.icon_dark_theme_disabled)
-        } else {
-            ContextCompat.getColor(this, R.color.icon_light_theme_disabled)
-        }
         shouldShowTabsInDrawer = userPreferences.showTabsInDrawer
         swapBookmarksAndTabs = userPreferences.bookmarksAndTabsSwapped
 
@@ -351,12 +343,8 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
         customView.findViewById<FrameLayout>(R.id.arrow_button).setOnClickListener(this)
 
-        backgroundColor = ThemeUtils.getPrimaryColor(this)
-
         // create the search EditText in the ToolBar
         searchView = customView.findViewById<SearchView>(R.id.search).apply {
-            setHintTextColor(ThemeUtils.getThemedTextHintColor(isDarkTheme))
-            setTextColor(if (isDarkTheme) Color.WHITE else Color.BLACK)
             setCompoundDrawablesWithIntrinsicBounds(sslDrawable, null, null, null)
             search_refresh.setImageResource(R.drawable.ic_action_refresh)
 
@@ -965,9 +953,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
         logger.log(TAG, "Remove the tab view")
 
-        // Set the background color so the color mode color doesn't show through
-        content_frame.setBackgroundColor(backgroundColor)
-
         currentTabView.removeFromParent()
 
         currentTabView = null
@@ -985,9 +970,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         }
 
         logger.log(TAG, "Setting the tab view")
-
-        // Set the background color so the color mode color doesn't show through
-        content_frame.setBackgroundColor(backgroundColor)
 
         view.removeFromParent()
         currentTabView.removeFromParent()
@@ -1009,15 +991,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         // otherwise it will get caught up with the showTab code
         // and cause a janky motion
         mainHandler.postDelayed(drawer_layout::closeDrawers, 200)
-
-        // mainHandler.postDelayed(new Runnable() {
-        //     @Override
-        //     public void run() {
-        // Remove browser frame background to reduce overdraw
-        //TODO evaluate performance
-        //         content_frame.setBackgroundColor(Color.TRANSPARENT);
-        //     }
-        // }, 300);
     }
 
     override fun showBlockedLocalFileDialog(onPositiveClick: Function0<Unit>) =
@@ -1153,7 +1126,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         }
 
     override fun closeBrowser() {
-        content_frame.setBackgroundColor(backgroundColor)
         currentTabView.removeFromParent()
         performExitCleanUp()
         val size = tabsManager.size()
@@ -1461,32 +1433,18 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     override fun setForwardButtonEnabled(enabled: Boolean) {
-        val colorFilter = if (enabled) {
-            iconColor
-        } else {
-            disabledIconColor
-        }
-        forwardMenuItem?.icon?.setColorFilter(colorFilter, PorterDuff.Mode.SRC_IN)
-        forwardMenuItem?.icon = forwardMenuItem?.icon
+        forwardMenuItem?.isEnabled = enabled
+        tabsView?.setGoForwardEnabled(enabled)
     }
 
     override fun setBackButtonEnabled(enabled: Boolean) {
-        val colorFilter = if (enabled) {
-            iconColor
-        } else {
-            disabledIconColor
-        }
-        backMenuItem?.icon?.setColorFilter(colorFilter, PorterDuff.Mode.SRC_IN)
-        backMenuItem?.icon = backMenuItem?.icon
+        backMenuItem?.isEnabled = enabled
+        tabsView?.setGoBackEnabled(enabled)
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        backMenuItem = menu.findItem(R.id.action_back)?.apply {
-            icon?.setColorFilter(iconColor, PorterDuff.Mode.SRC_IN)
-        }
-        forwardMenuItem = menu.findItem(R.id.action_forward)?.apply {
-            icon?.setColorFilter(iconColor, PorterDuff.Mode.SRC_IN)
-        }
+        backMenuItem = menu.findItem(R.id.action_back)
+        forwardMenuItem = menu.findItem(R.id.action_forward)
         return super.onCreateOptionsMenu(menu)
     }
 
@@ -1570,8 +1528,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
     override fun onShowCustomView(view: View, callback: CustomViewCallback) {
         originalOrientation = requestedOrientation
-        val requestedOrientation = originalOrientation
-        onShowCustomView(view, callback, requestedOrientation)
+        onShowCustomView(view, callback, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
     }
 
     override fun onShowCustomView(view: View, callback: CustomViewCallback, requestedOrientation: Int) {

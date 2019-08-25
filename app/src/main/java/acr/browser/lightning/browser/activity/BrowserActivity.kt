@@ -16,10 +16,7 @@ import acr.browser.lightning.database.HistoryEntry
 import acr.browser.lightning.database.bookmark.BookmarkRepository
 import acr.browser.lightning.database.history.HistoryRepository
 import acr.browser.lightning.device.ScreenSize
-import acr.browser.lightning.di.DatabaseScheduler
-import acr.browser.lightning.di.MainHandler
-import acr.browser.lightning.di.MainScheduler
-import acr.browser.lightning.di.injector
+import acr.browser.lightning.di.*
 import acr.browser.lightning.dialog.BrowserDialog
 import acr.browser.lightning.dialog.DialogItem
 import acr.browser.lightning.dialog.LightningDialogBuilder
@@ -27,6 +24,7 @@ import acr.browser.lightning.extensions.*
 import acr.browser.lightning.html.bookmark.BookmarkPageFactory
 import acr.browser.lightning.html.history.HistoryPageFactory
 import acr.browser.lightning.html.homepage.HomePageFactory
+import acr.browser.lightning.icon.TabCountView
 import acr.browser.lightning.interpolator.BezierDecelerateInterpolator
 import acr.browser.lightning.log.Logger
 import acr.browser.lightning.notifications.IncognitoNotification
@@ -91,7 +89,6 @@ import com.anthonycr.grant.PermissionsManager
 import io.reactivex.Completable
 import io.reactivex.Scheduler
 import io.reactivex.rxkotlin.subscribeBy
-import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.browser_content.*
 import kotlinx.android.synthetic.main.search.*
@@ -106,7 +103,8 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     // Toolbar Views
     private var searchBackground: View? = null
     private var searchView: SearchView? = null
-    private var arrowImageView: ImageView? = null
+    private var homeImageView: ImageView? = null
+    private var tabCountView: TabCountView? = null
 
     // Current tab view being displayed
     private var currentTabView: View? = null
@@ -148,6 +146,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     @Inject lateinit var inputMethodManager: InputMethodManager
     @Inject lateinit var clipboardManager: ClipboardManager
     @Inject lateinit var notificationManager: NotificationManager
+    @Inject @field:DiskScheduler lateinit var diskScheduler: Scheduler
     @Inject @field:DatabaseScheduler lateinit var databaseScheduler: Scheduler
     @Inject @field:MainScheduler lateinit var mainScheduler: Scheduler
     @Inject lateinit var tabsManager: TabsManager
@@ -321,27 +320,29 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             height = LayoutParams.MATCH_PARENT
         }
 
-        arrowImageView = customView.findViewById<ImageView>(R.id.arrow).also {
-            if (shouldShowTabsInDrawer) {
-                if (it.width <= 0) {
-                    it.measure(MeasureSpec.UNSPECIFIED, MeasureSpec.UNSPECIFIED)
-                }
-                updateTabNumber(0)
-
-                // Post drawer locking in case the activity is being recreated
-                mainHandler.post { drawer_layout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, getTabDrawer()) }
-            } else {
-
-                // Post drawer locking in case the activity is being recreated
-                mainHandler.post { drawer_layout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, getTabDrawer()) }
-                it.setImageResource(R.drawable.ic_action_home)
-            }
+        tabCountView = customView.findViewById(R.id.tab_count_view)
+        homeImageView = customView.findViewById(R.id.home_image_view)
+        if (shouldShowTabsInDrawer && !isIncognito()) {
+            tabCountView?.visibility = VISIBLE
+            homeImageView?.visibility = GONE
+        } else if (shouldShowTabsInDrawer) {
+            tabCountView?.visibility = GONE
+            homeImageView?.visibility = VISIBLE
+            homeImageView?.setImageResource(R.drawable.incognito_mode)
+            // Post drawer locking in case the activity is being recreated
+            mainHandler.post { drawer_layout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, getTabDrawer()) }
+        } else {
+            tabCountView?.visibility = GONE
+            homeImageView?.visibility = VISIBLE
+            homeImageView?.setImageResource(R.drawable.ic_action_home)
+            // Post drawer locking in case the activity is being recreated
+            mainHandler.post { drawer_layout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, getTabDrawer()) }
         }
 
         // Post drawer locking in case the activity is being recreated
         mainHandler.post { drawer_layout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, getBookmarkDrawer()) }
 
-        customView.findViewById<FrameLayout>(R.id.arrow_button).setOnClickListener(this)
+        customView.findViewById<FrameLayout>(R.id.home_button).setOnClickListener(this)
 
         // create the search EditText in the ToolBar
         searchView = customView.findViewById<SearchView>(R.id.search).apply {
@@ -512,7 +513,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         override fun onPreFocus() {
             val currentView = tabsManager.currentTab ?: return
             val url = currentView.url
-            if (!UrlUtils.isSpecialUrl(url)) {
+            if (!url.isSpecialUrl()) {
                 if (searchView?.hasFocus() == false) {
                     searchView?.setText(url)
                 }
@@ -605,7 +606,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         val currentSearchEngine = searchEngineProvider.provideSearchEngine()
         searchText = currentSearchEngine.queryUrl
 
-        updateCookiePreference().subscribeOn(Schedulers.computation()).subscribe()
+        updateCookiePreference().subscribeOn(diskScheduler).subscribe()
         proxyUtils.updateProxySettings(this)
     }
 
@@ -743,7 +744,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             R.id.action_add_to_homescreen -> {
                 if (currentView != null
                     && currentView.url.isNotBlank()
-                    && !UrlUtils.isSpecialUrl(currentView.url)) {
+                    && !currentView.url.isSpecialUrl()) {
                     HistoryEntry(currentView.url, currentView.title).also {
                         Utils.createShortcut(this, it, currentView.favicon ?: webPageBitmap!!)
                         logger.log(TAG, "Creating shortcut: ${it.title} ${it.url}")
@@ -769,7 +770,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 return true
             }
             R.id.action_copy -> {
-                if (currentUrl != null && !UrlUtils.isSpecialUrl(currentUrl)) {
+                if (currentUrl != null && !currentUrl.isSpecialUrl()) {
                     clipboardManager.primaryClip = ClipData.newPlainText("label", currentUrl)
                     snackbar(R.string.message_link_copied)
                 }
@@ -788,7 +789,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 return true
             }
             R.id.action_add_bookmark -> {
-                if (currentUrl != null && !UrlUtils.isSpecialUrl(currentUrl)) {
+                if (currentUrl != null && !currentUrl.isSpecialUrl()) {
                     addBookmark(currentView.title, currentUrl)
                 }
                 return true
@@ -1029,7 +1030,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             return
         }
 
-        if (!UrlUtils.isSpecialUrl(url)) {
+        if (!url.isSpecialUrl()) {
             bookmarkManager.isBookmark(url)
                 .subscribeOn(databaseScheduler)
                 .observeOn(mainScheduler)
@@ -1119,7 +1120,9 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                 // In landscape toolbar should be 48 dp tall
                 Utils.dpToPx(52f)
             }
-            toolbar.layoutParams = ConstraintLayout.LayoutParams(LayoutParams.MATCH_PARENT, toolbarSize)
+            toolbar.layoutParams = (toolbar.layoutParams as ConstraintLayout.LayoutParams).apply {
+                height = toolbarSize
+            }
             toolbar.minimumHeight = toolbarSize
             toolbar.doOnLayout { setWebViewTranslation(toolbar_layout.height.toFloat()) }
             toolbar.requestLayout()
@@ -1239,10 +1242,10 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         if (query.isEmpty()) {
             return
         }
-        val searchUrl = "$searchText${UrlUtils.QUERY_PLACE_HOLDER}"
+        val searchUrl = "$searchText$QUERY_PLACE_HOLDER"
         if (currentTab != null) {
             currentTab.stopLoading()
-            presenter?.loadUrlInCurrentView(UrlUtils.smartUrlFilter(query.trim(), true, searchUrl))
+            presenter?.loadUrlInCurrentView(smartUrlFilter(query.trim(), true, searchUrl))
         }
     }
 
@@ -1305,8 +1308,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             DrawableUtils.mixColor(0.25f, requestedColor, Color.WHITE)
         }
 
-    override fun getUseDarkTheme(): Boolean = isDarkTheme
-
     @ColorInt
     override fun getUiColor(): Int = currentUiColor
 
@@ -1323,13 +1324,8 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     override fun updateTabNumber(number: Int) {
-        if (shouldShowTabsInDrawer) {
-            if (isIncognito()) {
-                arrowImageView?.setImageResource(R.drawable.incognito_mode)
-            } else {
-                arrowImageView?.setImageBitmap(DrawableUtils.getRoundedNumberImage(number, Utils.dpToPx(24f),
-                    Utils.dpToPx(24f), ThemeUtils.getIconThemeColor(this, isDarkTheme), Utils.dpToPx(2.5f)))
-            }
+        if (shouldShowTabsInDrawer && !isIncognito()) {
+            tabCountView?.updateCount(number)
         }
     }
 
@@ -1339,7 +1335,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     protected fun addItemToHistory(title: String?, url: String) {
-        if (UrlUtils.isSpecialUrl(url)) {
+        if (url.isSpecialUrl()) {
             return
         }
 
@@ -1374,7 +1370,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             presenter?.onAutoCompleteItemPressed()
         }
 
-        getUrl.setAdapter(SuggestionsAdapter(this, isDarkTheme, isIncognito()))
+        getUrl.setAdapter(SuggestionsAdapter(this, isIncognito()))
     }
 
     /**
@@ -1788,7 +1784,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
     override fun handleBookmarksChange() {
         val currentTab = tabsManager.currentTab
-        if (currentTab != null && UrlUtils.isBookmarkUrl(currentTab.url)) {
+        if (currentTab != null && currentTab.url.isBookmarkUrl()) {
             currentTab.loadBookmarkPage()
         }
         if (currentTab != null) {
@@ -1799,7 +1795,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
     override fun handleDownloadDeleted() {
         val currentTab = tabsManager.currentTab
-        if (currentTab != null && UrlUtils.isDownloadsUrl(currentTab.url)) {
+        if (currentTab != null && currentTab.url.isDownloadsUrl()) {
             currentTab.loadDownloadsPage()
         }
         if (currentTab != null) {
@@ -1864,7 +1860,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     override fun onClick(v: View) {
         val currentTab = tabsManager.currentTab ?: return
         when (v.id) {
-            R.id.arrow_button -> when {
+            R.id.home_button -> when {
                 searchView?.hasFocus() == true -> currentTab.requestFocus()
                 shouldShowTabsInDrawer -> drawer_layout.openDrawer(getTabDrawer())
                 else -> currentTab.loadHomePage()

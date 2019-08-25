@@ -21,13 +21,11 @@ import acr.browser.lightning.extensions.color
 import acr.browser.lightning.extensions.drawable
 import acr.browser.lightning.favicon.FaviconModel
 import acr.browser.lightning.reading.activity.ReadingActivity
-import acr.browser.lightning.utils.ThemeUtils
-import acr.browser.lightning.utils.UrlUtils
+import acr.browser.lightning.utils.isSpecialUrl
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.PorterDuff
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -161,11 +159,8 @@ class BookmarksFragment : Fragment(), View.OnClickListener, View.OnLongClickList
                     return@subscribe
                 }
                 action_add_bookmark_image.isSelected = isBookmark
-                if (isBookmark) {
-                    action_add_bookmark_image?.setColorFilter(ThemeUtils.getAccentColor(activity), PorterDuff.Mode.SRC_IN)
-                } else {
-                    action_add_bookmark_image?.clearColorFilter()
-                }
+                action_add_bookmark.isEnabled = !url.isSpecialUrl()
+                action_add_bookmark_image.isEnabled = !url.isSpecialUrl()
             }
     }
 
@@ -282,7 +277,7 @@ class BookmarksFragment : Fragment(), View.OnClickListener, View.OnLongClickList
                 icon = activity.drawable(R.drawable.ic_block),
                 colorTint = activity.color(R.color.error_red).takeIf { isAllowedAds },
                 title = whitelistString,
-                isConditionMet = !UrlUtils.isSpecialUrl(currentTab.url)
+                isConditionMet = !currentTab.url.isSpecialUrl()
             ) {
                 if (isAllowedAds) {
                     whitelistModel.removeUrlFromAllowList(currentTab.url)

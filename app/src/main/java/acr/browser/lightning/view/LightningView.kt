@@ -56,6 +56,11 @@ class LightningView(
 ) {
 
     /**
+     * The unique ID of the view.
+     */
+    val id = View.generateViewId()
+
+    /**
      * Getter for the [LightningViewTitle] of the current LightningView instance.
      *
      * @return a NonNull instance of LightningViewTitle
@@ -183,13 +188,10 @@ class LightningView(
         gestureDetector = GestureDetector(activity, CustomGestureListener())
 
         val tab = WebView(activity).also { webView = it }.apply {
-            id = View.generateViewId()
+            id = this@LightningView.id
 
-            drawingCacheBackgroundColor = Color.WHITE
             isFocusableInTouchMode = true
             isFocusable = true
-            isDrawingCacheEnabled = false
-            setWillNotCacheDrawing(true)
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
                 isAnimationCacheEnabled = false
                 isAlwaysDrawnWithCacheEnabled = false
@@ -320,7 +322,7 @@ class LightningView(
             settings.setSupportMultipleWindows(false)
         }
 
-        settings.useWideViewPort = userPreferences.useWideViewportEnabled
+        settings.useWideViewPort = userPreferences.useWideViewPortEnabled
         settings.loadWithOverviewMode = userPreferences.overviewModeEnabled
         settings.textZoom = when (userPreferences.textSize) {
             0 -> 200

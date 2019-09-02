@@ -327,4 +327,6 @@
     <string name="notification_incognito_running_description">Ongoing incognito notification</string>
     <string name="action_exit">Exit</string>
     <string name="ad_block_load_failure">Failed to load hosts from ad blocking source.</string>
+
+    <string name="infinity">∞</string>
 </resources>

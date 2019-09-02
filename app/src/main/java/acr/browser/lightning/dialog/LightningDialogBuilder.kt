@@ -17,10 +17,9 @@ import acr.browser.lightning.extensions.toast
 import acr.browser.lightning.html.bookmark.BookmarkPageFactory
 import acr.browser.lightning.preference.UserPreferences
 import acr.browser.lightning.utils.IntentUtils
-import acr.browser.lightning.utils.UrlUtils
+import acr.browser.lightning.utils.isBookmarkUrl
 import android.app.Activity
 import android.content.ClipboardManager
-import android.text.TextUtils
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
@@ -63,7 +62,7 @@ class LightningDialogBuilder @Inject constructor(
         uiController: UIController,
         url: String
     ) {
-        if (UrlUtils.isBookmarkUrl(url)) {
+        if (url.isBookmarkUrl()) {
             // TODO hacky, make a better bookmark mechanism in the future
             val uri = url.toUri()
             val filename = requireNotNull(uri.lastPathSegment) { "Last segment should always exist for bookmark file" }
@@ -255,7 +254,7 @@ class LightningDialogBuilder @Inject constructor(
         R.string.hint_title,
         folder.title,
         R.string.action_ok) { text ->
-        if (!TextUtils.isEmpty(text)) {
+        if (text.isNotBlank()) {
             val oldTitle = folder.title
             bookmarkManager.renameFolder(oldTitle, text)
                 .subscribeOn(databaseScheduler)

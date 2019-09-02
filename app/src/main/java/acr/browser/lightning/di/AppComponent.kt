@@ -6,8 +6,8 @@ import acr.browser.lightning.adblock.NoOpAdBlocker
 import acr.browser.lightning.browser.SearchBoxModel
 import acr.browser.lightning.browser.activity.BrowserActivity
 import acr.browser.lightning.browser.activity.ThemableBrowserActivity
-import acr.browser.lightning.browser.fragment.BookmarksFragment
-import acr.browser.lightning.browser.fragment.TabsFragment
+import acr.browser.lightning.browser.bookmarks.BookmarksDrawerView
+import acr.browser.lightning.device.BuildInfo
 import acr.browser.lightning.dialog.LightningDialogBuilder
 import acr.browser.lightning.download.DownloadHandler
 import acr.browser.lightning.download.LightningDownloadListener
@@ -20,6 +20,8 @@ import acr.browser.lightning.utils.ProxyUtils
 import acr.browser.lightning.view.LightningChromeClient
 import acr.browser.lightning.view.LightningView
 import acr.browser.lightning.view.LightningWebClient
+import android.app.Application
+import dagger.BindsInstance
 import dagger.Component
 import javax.inject.Singleton
 
@@ -27,15 +29,23 @@ import javax.inject.Singleton
 @Component(modules = [(AppModule::class), (AppBindsModule::class)])
 interface AppComponent {
 
-    fun inject(activity: BrowserActivity)
+    @Component.Builder
+    interface Builder {
 
-    fun inject(fragment: BookmarksFragment)
+        @BindsInstance
+        fun application(application: Application): Builder
+
+        @BindsInstance
+        fun buildInfo(buildInfo: BuildInfo): Builder
+
+        fun build(): AppComponent
+    }
+
+    fun inject(activity: BrowserActivity)
 
     fun inject(fragment: BookmarkSettingsFragment)
 
     fun inject(builder: LightningDialogBuilder)
-
-    fun inject(fragment: TabsFragment)
 
     fun inject(lightningView: LightningView)
 
@@ -74,6 +84,8 @@ interface AppComponent {
     fun inject(displaySettingsFragment: DisplaySettingsFragment)
 
     fun inject(adBlockSettingsFragment: AdBlockSettingsFragment)
+
+    fun inject(bookmarksView: BookmarksDrawerView)
 
     fun provideBloomFilterAdBlocker(): BloomFilterAdBlocker
 

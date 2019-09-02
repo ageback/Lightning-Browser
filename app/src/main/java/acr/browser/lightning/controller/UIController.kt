@@ -28,10 +28,9 @@ interface UIController {
     fun getUiColor(): Int
 
     /**
-     * @return whether or not the UI is currently themed in dark mode. True if it is in dark theme,
-     * false otherwise.
+     * @return true if color mode is enabled, false otherwise.
      */
-    fun getUseDarkTheme(): Boolean
+    fun isColorMode(): Boolean
 
     /**
      * @return the tab model which contains all the tabs presented to the user.

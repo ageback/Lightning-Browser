@@ -19,7 +19,7 @@
     <string name="java">启用 JavaScript</string>
     <string name="download">下载目录</string>
     <string name="settings_advanced">高级设置</string>
-    <string name="apache">Apache License 2.0</string>
+    <string name="apache">Apache 许可证 2.0</string>
     <string name="version">程序版本</string>
     <string name="cache">退出时清理缓存</string>
     <string name="reflow">启用文本重排</string>
@@ -56,7 +56,7 @@
     <string name="action_cancel">取消</string>
     <string name="title_warning">警告</string>
     <string name="dialog_adobe_not_installed">"未检测到您的设备中安装了 Adobe Flash Player，请先安装 Adobe  Flash Player 后再启用此选项。"</string>
-    <string name="title_user_agent">User Agent</string>
+    <string name="title_user_agent">用户代理</string>
     <string name="title_download_location">下载目录</string>
     <string name="title_custom_homepage">自定义主页</string>
     <string name="action_webpage">网页</string>
@@ -134,8 +134,8 @@
     <string name="untitled">未标题的</string>
     <string name="mpl_license">Mozilla Public License v. 2.0</string>
     <string name="freeware">免费软件</string>
-    <string name="android_open_source_project">Android 开源项目 (AOSP)</string>
-    <string name="hphosts_ad_server_list">hpHosts 广告服务器列表</string>    
+    <string name="android_open_source_project">Android 开源项目</string>
+    <string name="hphosts_ad_server_list">hpHosts 广告服务器列表</string>
     <string name="reopening_recent_tab">重新打开旧标签页</string>
     <string name="rendering_mode">渲染模式</string>
     <string name="name_inverted">反转</string>
@@ -160,7 +160,7 @@
     <string name="jsoup">jsoup: Java HTML 解析器</string>
     <string name="loading">正在加载&#8230;</string>
     <string name="loading_failed">无法从页面上加载任何东西。</string>
-    <string name="mit_license">MIT 许可</string>
+    <string name="mit_license">MIT许可证</string>
     <string name="reading_mode">阅读模式</string>
     <string name="settings_about">关于</string>
     <string name="settings_about_explain">关于版本，作者和许可的详细信息。</string>
@@ -256,4 +256,43 @@
     </plurals>
     <string name="notification_incognito_running_description">持续的隐身通知</string>
     <string name="ssl_warning_dont_ask_again">对于此浏览器会话不再询问。</string>
+
+    <string name="snacktory">Snacktory</string>
+
+    <string name="action_message_canceled">动作被取消。</string>
+    <string name="ad_block_load_failure">无法从广告拦截源加载 hosts.</string>
+    <string name="block_ad_refresh_now">立即刷新 hosts</string>
+    <string name="block_ad_remote_refresh_frequency_description">用于远程 hosts 文件</string>
+    <string name="block_ad_source">Hosts 文件源</string>
+    <string name="block_ads_upsell_source">升级到Lightning Plus可供选择</string>
+    <string name="block_remote_frequency_daily">每天</string>
+    <string name="block_remote_frequency_monthly">每月</string>
+    <string name="block_remote_frequency_weekly">每周</string>
+    <string name="block_source_default">默认 hosts</string>
+    <string name="block_source_local">本地 hosts 文件</string>
+    <string name="block_source_local_description">文件: %1$s</string>
+    <string name="block_source_remote">远程 hosts 文件</string>
+    <string name="block_source_remote_description">URL: %1$s</string>
+    <string name="debug_leak_canary">LeakCanary</string>
+    <string name="dialog_adblock_disable_for_site">停用网站的广告拦截</string>
+    <string name="dialog_adblock_enable_for_site">为网站启用广告拦截</string>
+    <string name="dialog_toggle_desktop">切换桌面用户代理</string>
+    <string name="dialog_tools_title">页面工具</string>
+    <string name="infinity">∞</string>
+    <string name="message_permission_request">%1$s  想要使用:  %2$s</string>
+    <string name="powered_by_naver">由 Naver 提供支持</string>
+    <string name="save_data">请求 \'保存数据\'</string>
+    <string name="search_engine_ask">Ask</string>
+    <string name="search_engine_baidu">百度</string>
+    <string name="search_engine_bing">必应</string>
+    <string name="search_engine_duckduckgo">DuckDuckGo</string>
+    <string name="search_engine_duckduckgo_lite">DuckDuckGo Lite</string>
+    <string name="search_engine_google">Google</string>
+    <string name="search_engine_naver">Naver</string>
+    <string name="search_engine_startpage">StartPage</string>
+    <string name="search_engine_startpage_mobile">StartPage Mobile</string>
+    <string name="search_engine_yahoo">雅虎</string>
+    <string name="search_engine_yandex">Yandex</string>
+    <string name="title_permission_request">请求权限</string>
+    <string name="webrtc_support">WebRTC 支持</string>
 </resources>

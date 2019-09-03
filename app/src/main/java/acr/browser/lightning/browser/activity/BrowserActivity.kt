@@ -4,13 +4,13 @@
 
 package acr.browser.lightning.browser.activity
 
+import acr.browser.lightning.AppTheme
 import acr.browser.lightning.IncognitoActivity
 import acr.browser.lightning.R
 import acr.browser.lightning.browser.*
 import acr.browser.lightning.browser.bookmarks.BookmarksDrawerView
 import acr.browser.lightning.browser.tabs.TabsDesktopView
 import acr.browser.lightning.browser.tabs.TabsDrawerView
-import acr.browser.lightning.constant.LOAD_READING_URL
 import acr.browser.lightning.controller.UIController
 import acr.browser.lightning.database.Bookmark
 import acr.browser.lightning.database.HistoryEntry
@@ -44,7 +44,6 @@ import android.app.NotificationManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -243,7 +242,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         val actionBar = requireNotNull(supportActionBar)
 
         //TODO make sure dark theme flag gets set correctly
-        isDarkTheme = userPreferences.useTheme != 0 || isIncognito()
+        isDarkTheme = userPreferences.useTheme != AppTheme.LIGHT || isIncognito()
         shouldShowTabsInDrawer = userPreferences.showTabsInDrawer
         swapBookmarksAndTabs = userPreferences.bookmarksAndTabsSwapped
 
@@ -750,9 +749,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             }
             R.id.action_reading_mode -> {
                 if (currentUrl != null) {
-                    val read = Intent(this, ReadingActivity::class.java)
-                    read.putExtra(LOAD_READING_URL, currentUrl)
-                    startActivity(read)
+                    ReadingActivity.launch(this, currentUrl)
                 }
                 return true
             }
@@ -1461,11 +1458,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             putExtra(Intent.EXTRA_TITLE, "Image Chooser")
             putExtra(Intent.EXTRA_INITIAL_INTENTS, intentArray)
         }, FILE_CHOOSER_REQUEST_CODE)
-    }
-
-    override fun onShowCustomView(view: View, callback: CustomViewCallback) {
-        originalOrientation = requestedOrientation
-        onShowCustomView(view, callback, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
     }
 
     override fun onShowCustomView(view: View, callback: CustomViewCallback, requestedOrientation: Int) {

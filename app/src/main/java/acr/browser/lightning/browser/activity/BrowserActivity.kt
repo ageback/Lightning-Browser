@@ -48,7 +48,6 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.graphics.PorterDuff
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.media.MediaPlayer
@@ -253,10 +252,6 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         left_drawer.setLayerType(LAYER_TYPE_NONE, null)
         right_drawer.setLayerType(LAYER_TYPE_NONE, null)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && !shouldShowTabsInDrawer) {
-            window.statusBarColor = Color.BLACK
-        }
-
         setNavigationDrawerWidth()
         drawer_layout.addDrawerListener(DrawerLocker())
 
@@ -325,7 +320,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
             onFocusChangeListener = searchListener
             setOnEditorActionListener(searchListener)
             onPreFocusListener = searchListener
-            addTextChangedListener(searchListener)
+            addTextChangedListener(StyleRemovingTextWatcher())
 
             initializeSearchSuggestions(this)
         }
@@ -340,7 +335,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
 
         searchBackground = customView.findViewById<View>(R.id.search_container).apply {
             // initialize search background color
-            background.setColorFilter(getSearchBarColor(primaryColor, primaryColor), PorterDuff.Mode.SRC_IN)
+            background.tint(getSearchBarColor(primaryColor, primaryColor))
         }
 
         drawer_layout.setDrawerShadow(R.drawable.drawer_right_shadow, GravityCompat.END)
@@ -412,19 +407,9 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     private inner class SearchListenerClass : OnKeyListener,
         OnEditorActionListener,
         OnFocusChangeListener,
-        SearchView.PreFocusListener,
-        TextWatcher {
-        override fun beforeTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) = Unit
-
-        override fun onTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) = Unit
-
-        override fun afterTextChanged(e: Editable) {
-            e.getSpans(0, e.length, CharacterStyle::class.java).forEach(e::removeSpan)
-            e.getSpans(0, e.length, ParagraphStyle::class.java).forEach(e::removeSpan)
-        }
+        SearchView.PreFocusListener {
 
         override fun onKey(view: View, keyCode: Int, keyEvent: KeyEvent): Boolean {
-
             when (keyCode) {
                 KeyEvent.KEYCODE_ENTER -> {
                     searchView?.let {
@@ -524,7 +509,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     }
 
     private fun setNavigationDrawerWidth() {
-        val width = resources.displayMetrics.widthPixels - Utils.dpToPx(56f)
+        val width = resources.displayMetrics.widthPixels - dimen(R.dimen.navigation_drawer_minimum_space)
         val maxWidth = resources.getDimensionPixelSize(R.dimen.navigation_drawer_max_width)
         if (width < maxWidth) {
             val params = left_drawer.layoutParams as DrawerLayout.LayoutParams
@@ -838,7 +823,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
     private fun showFindInPageControls(text: String) {
         search_bar.visibility = VISIBLE
 
-        findViewById<TextView>(R.id.search_query).text = "'$text'"
+        findViewById<TextView>(R.id.search_query).text = resources.getString(R.string.search_in_page_query, text)
         findViewById<ImageButton>(R.id.button_next).setOnClickListener(this)
         findViewById<ImageButton>(R.id.button_back).setOnClickListener(this)
         findViewById<ImageButton>(R.id.button_quit).setOnClickListener(this)
@@ -1054,14 +1039,12 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         ui_layout.doOnLayout {
             // TODO externalize the dimensions
             val toolbarSize = if (configuration.orientation == Configuration.ORIENTATION_PORTRAIT) {
-                // In portrait toolbar should be 56 dp tall
-                Utils.dpToPx(56f)
+                R.dimen.toolbar_height_portrait
             } else {
-                // In landscape toolbar should be 48 dp tall
-                Utils.dpToPx(52f)
+                R.dimen.toolbar_height_landscape
             }
             toolbar.layoutParams = (toolbar.layoutParams as ConstraintLayout.LayoutParams).apply {
-                height = toolbarSize
+                height = dimen(toolbarSize)
             }
             toolbar.minimumHeight = toolbarSize
             toolbar.doOnLayout { setWebViewTranslation(toolbar_layout.height.toFloat()) }
@@ -1233,12 +1216,13 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
                         backgroundDrawable.color = animatedColor
                         mainHandler.post { window.setBackgroundDrawable(backgroundDrawable) }
                     } else {
-                        tabBackground?.setColorFilter(animatedColor, PorterDuff.Mode.SRC_IN)
+                        tabBackground?.tint(animatedColor)
                     }
                     currentUiColor = animatedColor
                     toolbar_layout.setBackgroundColor(animatedColor)
-                    searchBackground?.background?.setColorFilter(DrawableUtils.mixColor(interpolatedTime,
-                        startSearchColor, finalSearchColor), PorterDuff.Mode.SRC_IN)
+                    searchBackground?.background?.tint(
+                        DrawableUtils.mixColor(interpolatedTime, startSearchColor, finalSearchColor)
+                    )
                 }
             }
             animation.duration = 300

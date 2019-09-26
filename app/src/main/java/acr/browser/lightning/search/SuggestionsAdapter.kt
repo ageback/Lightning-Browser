@@ -52,6 +52,15 @@ class SuggestionsAdapter(
     private val bookmarkIcon = context.drawable(R.drawable.ic_bookmark)
     private var suggestionsRepository: SuggestionsRepository
 
+    /**
+     * The listener that is fired when the insert button on a [SearchSuggestion] is clicked.
+     */
+    var onSuggestionInsertClick: ((WebPage) -> Unit)? = null
+
+    private val onClick = View.OnClickListener {
+        onSuggestionInsertClick?.invoke(it.tag as WebPage)
+    }
+
     private val layoutInflater = LayoutInflater.from(context)
 
     init {
@@ -100,7 +109,6 @@ class SuggestionsAdapter(
     override fun getItemId(position: Int): Long = 0
 
     override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-
         val holder: SuggestionViewHolder
         val finalView: View
 
@@ -125,6 +133,9 @@ class SuggestionsAdapter(
         }
 
         holder.imageView.setImageDrawable(image)
+
+        holder.insertSuggestion.tag = webPage
+        holder.insertSuggestion.setOnClickListener(onClick)
 
         return finalView
     }
